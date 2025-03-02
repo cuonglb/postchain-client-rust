@@ -31,7 +31,8 @@
 //!     Params::Text("bar".to_string())
 //! ]);
 //! 
-//! let hash = gtv_hash(array_data).unwrap();
+//! let hash_version = 2;
+//! let hash = gtv_hash(array_data, hash_version).unwrap();
 //! ```
 //! 
 //! Hashing a dictionary:
@@ -43,7 +44,8 @@
 //! dict.insert("key".to_string(), Params::Integer(42));
 //! let dict_data = Params::Dict(dict);
 //! 
-//! let hash = gtv_hash(dict_data).unwrap();
+//! let hash_version = 1;
+//! let hash = gtv_hash(dict_data, hash_version).unwrap();
 //! ```
 //! 
 //! # Error Handling
@@ -93,8 +95,9 @@ enum NodeType {
 /// use crate::utils::operation::Params;
 /// 
 /// // Attempting to hash an empty array
+/// let hash_version = 2;
 /// let empty_array = Params::Array(vec![]);
-/// match gtv_hash(empty_array) {
+/// match gtv_hash(empty_array, hash_version) {
 ///     Ok(_) => println!("Hash computed successfully"),
 ///     Err(HashError::EmptyArray(msg)) => println!("{}", msg),
 ///     _ => println!("Other error occurred"),
@@ -233,6 +236,7 @@ impl BinaryTreeFactory {
     /// 
     /// # Arguments
     /// * `params` - Box containing array parameters to process
+    /// * `hash_version` - Hash version
     /// 
     /// # Returns
     /// * `Ok(Box<BinaryTreeNode>)` - A tree node representing the array structure
@@ -240,7 +244,7 @@ impl BinaryTreeFactory {
     /// 
     /// # Note
     /// The resulting tree preserves the order of array elements in the leaf nodes
-    fn process_array_node(params: Box<Params>) -> Result<Box<BinaryTreeNode>, HashError> {
+    fn process_array_node(params: Box<Params>, hash_version: u8) -> Result<Box<BinaryTreeNode>, HashError> {
         if let Params::Array(array_value) = &*params {
             if array_value.is_empty() {
                 let left = BinaryTreeNode::new_leaf(None, true);
@@ -249,10 +253,19 @@ impl BinaryTreeFactory {
                 return Ok(Box::new(BinaryTreeNode::new_node(Some(left), Some(right), Some(value), NodeType::ArrayNode)));
             }
 
+            // This fix is backward compatible with hash version 1, but hash version 1 is incorrect!!!
+            // For hash version 1, if we have a single array element that is also an array,
+            // we recursively process the inner array directly.
+            if hash_version == 1 && array_value.len() == 1 {
+                if let Params::Array(_) = &array_value[0] {
+                    return Self::build_tree(Box::new(array_value[0].clone()), hash_version);
+                }
+            }
+
             let leaves: Result<Vec<_>, _> = array_value
                 .iter()
                 .map(|value| Box::new(value.clone()))
-                .map(Self::build_tree)
+                .map(|params| Self::build_tree(params, hash_version))
                 .collect();
 
             let leaves = leaves?;
@@ -284,6 +297,7 @@ impl BinaryTreeFactory {
     /// 
     /// # Arguments
     /// * `params` - Box containing dictionary parameters to process
+    /// * `hash_version` - Hash version
     /// 
     /// # Returns
     /// * `Ok(Box<BinaryTreeNode>)` - A tree node representing the dictionary structure
@@ -291,7 +305,7 @@ impl BinaryTreeFactory {
     /// 
     /// # Note
     /// Dictionary entries are processed in sorted order by key to ensure consistent hashing
-    fn process_dict_node(params: Box<Params>) -> Result<Box<BinaryTreeNode>, HashError> {
+    fn process_dict_node(params: Box<Params>, hash_version: u8) -> Result<Box<BinaryTreeNode>, HashError> {
         if let Params::Dict(dict_value) = &*params {
             if dict_value.is_empty() {
                 let left = BinaryTreeNode::new_leaf(None, true);
@@ -304,7 +318,7 @@ impl BinaryTreeFactory {
                 .iter()
                 .flat_map(|(key, value)| {
                     let key_leaf = BinaryTreeNode::new_leaf(Some(Box::new(Params::Text(key.clone()))), false);
-                    let value_tree = Self::build_tree(Box::new(value.clone()));
+                    let value_tree = Self::build_tree(Box::new(value.clone()), hash_version);
                     match value_tree {
                         Ok(tree) => vec![Ok(key_leaf), Ok(tree)],
                         Err(err) => vec![Err(err)],
@@ -339,6 +353,7 @@ impl BinaryTreeFactory {
     /// 
     /// # Arguments
     /// * `params` - Box containing the parameter to process into a tree
+    /// * `hash_version` - Hash version
     /// 
     /// # Returns
     /// * `Ok(Box<BinaryTreeNode>)` - The root node of the complete Merkle tree
@@ -346,12 +361,12 @@ impl BinaryTreeFactory {
     /// 
     /// # Note
     /// The resulting tree structure preserves the semantic structure of the input data
-    fn build_tree(params: Box<Params>) -> Result<Box<BinaryTreeNode>, HashError> {
+    fn build_tree(params: Box<Params>, hash_version: u8) -> Result<Box<BinaryTreeNode>, HashError> {
         match *params {
             Params::Array(_) =>
-                Self::process_array_node(params),
+                Self::process_array_node(params, hash_version),
             Params::Dict(_) =>
-                Self::process_dict_node(params),
+                Self::process_dict_node(params, hash_version),
             _ =>
                 Ok(BinaryTreeNode::new_leaf(Some(params), false))
         }
@@ -496,11 +511,13 @@ impl MerkleHashCalculator {
 /// ```
 /// use crate::utils::operation::Params;
 /// 
+/// let hash_version = 2;
+/// 
 /// // Hash an integer
-/// let int_hash = gtv_hash(Params::Integer(42)).unwrap();
+/// let int_hash = gtv_hash(Params::Integer(42), hash_version).unwrap();
 /// 
 /// // Hash a string
-/// let text_hash = gtv_hash(Params::Text("hello".to_string())).unwrap();
+/// let text_hash = gtv_hash(Params::Text("hello".to_string()), hash_version).unwrap();
 /// ```
 /// 
 /// Hashing nested structures:
@@ -517,10 +534,11 @@ impl MerkleHashCalculator {
 /// let data = Params::Dict(dict);
 /// 
 /// // Compute hash
-/// let hash = gtv_hash(data).unwrap();
+/// let hash_version = 2;
+/// let hash = gtv_hash(data, hash_version).unwrap();
 /// ```
-pub fn gtv_hash(value: Params) -> Result<[u8; 32], HashError> {
-    let tree = BinaryTreeFactory::build_tree(Box::new(value))?;
+pub fn gtv_hash(value: Params, hash_version: u8) -> Result<[u8; 32], HashError> {
+    let tree = BinaryTreeFactory::build_tree(Box::new(value), hash_version)?;
     Ok(MerkleHashCalculator::calculate_merkle_hash(&tree))
 }
 
@@ -542,21 +560,49 @@ fn test_gtv_hash() {
 
     let data2 = Params::Dict(data2_btree);
     
-    let result1 = gtv_hash(data1).unwrap();
-    let result2 = gtv_hash(data2).unwrap();
+    let result1 = gtv_hash(data1, 2).unwrap();
+    let result2 = gtv_hash(data2, 2).unwrap();
 
     assert_eq!("6357d3200e0dfb1bce5f3eb789714842747b39810248f83dba6382c7e7020e20", hex::encode(result1));
     assert_eq!("9f3d80d08a942b86e20932ad74356703dba7ba78b792f2d6ad93201ab9a71bab", hex::encode(result2));
 }
 
 #[test]
+fn test_gtv_hash_v1() {
+    let data1 = Params::Array(vec![Params::Text("a".to_string())]);
+    let data2 = Params::Array(vec![Params::Array(vec![Params::Text("a".to_string())])]);
+    let data3 = Params::Array(vec![
+        Params::Array(vec![
+            Params::Array(vec![Params::Text("a".to_string())])
+            ])
+        ]);
+
+    let result1 = gtv_hash(data1, 1).unwrap();
+    let result2 = gtv_hash(data2, 1).unwrap();
+    let result3 = gtv_hash(data3, 1).unwrap();
+
+    let expected_hash_result = "5ad2414edcd34b9a8bdc22921b8a1b8cef6cab04115dd0e7eb000b05353b315a";
+
+    assert_eq!(hex::encode(result1), expected_hash_result);
+    assert_eq!(hex::encode(result2), expected_hash_result);
+    assert_eq!(hex::encode(result3), expected_hash_result);
+}
+
+#[test]
 fn test_gtv_hash_v2() {
     let data1 = Params::Array(vec![Params::Text("a".to_string())]);
     let data2 = Params::Array(vec![Params::Array(vec![Params::Text("a".to_string())])]);
+    let data3 = Params::Array(vec![
+        Params::Array(vec![
+            Params::Array(vec![Params::Text("a".to_string())])
+            ])
+        ]);
 
-    let result1 = gtv_hash(data1).unwrap();
-    let result2 = gtv_hash(data2).unwrap();
+    let result1 = gtv_hash(data1, 2).unwrap();
+    let result2 = gtv_hash(data2, 2).unwrap();
+    let result3 = gtv_hash(data3, 2).unwrap();
 
     assert_eq!(hex::encode(result1), "5ad2414edcd34b9a8bdc22921b8a1b8cef6cab04115dd0e7eb000b05353b315a");
     assert_eq!(hex::encode(result2), "19605d1044cc20248e315f98f2d4c4aa7adfe6861607a0d000641837c3b962f8");
+    assert_eq!(hex::encode(result3), "574b45c58e62ff7b786ee644579ffea593c89541498c1692fb8c99d811265166");
 }
