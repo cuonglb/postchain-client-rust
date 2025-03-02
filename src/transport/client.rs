@@ -234,6 +234,51 @@ impl<'a> RestClient<'a> {
         true
     }
 
+    /// Detects the Merkle hash version used by a blockchain.
+    ///
+    /// This function queries the blockchain's configuration to determine which version
+    /// of the Merkle hash algorithm is being used. If the query fails or the version
+    /// information is not available, it defaults to version 1.
+    ///
+    /// # Arguments
+    /// * `brid` - The blockchain RID (Resource Identifier) as a hex-encoded string
+    ///
+    /// # Returns
+    /// * `u8` - The Merkle hash version number (defaults to 1 if not specified)
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use postchain_client::transport::RestClient;
+    /// # async fn example() {
+    /// let client = RestClient::default();
+    /// let brid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
+    /// let hash_version = client.detect_merkle_hash_version(brid).await;
+    /// println!("Blockchain uses Merkle hash version {}", hash_version);
+    /// # }
+    /// ```
+    pub async fn detect_merkle_hash_version(&self, brid: &str) -> u8 {
+        tracing::info!("Detecting merkle hash version of blockchain: {}", brid); 
+
+        let mut merkle_hash_version = 1;
+
+        if let Ok(RestResponse::Json(json_val)) = self.postchain_rest_api(
+            RestRequestMethod::GET,
+            Some(&[&"config".to_string(), brid, &"features".to_string()]),
+            None,
+            None,
+            None
+        ).await {
+            if let Some(version) = json_val["merkle_hash_version"].as_u64() {
+                merkle_hash_version = version as u8;
+                tracing::info!("Found merkle hash version = {}", merkle_hash_version);
+                return merkle_hash_version;
+            }
+        }
+
+        tracing::warn!("Failed to detect merkle hash version, using default version = {}", merkle_hash_version);
+        merkle_hash_version
+    }
+
     /// Updates the list of node URLs used by the client.
     ///
     /// # Arguments
@@ -566,4 +611,16 @@ impl<'a> RestClient<'a> {
 
         req_result_match
     }
+}
+
+#[tokio::test]
+async fn client_detect_merkle_hash_version() {
+    let rc = RestClient{
+        node_url: vec!["https://node11.devnet1.chromia.dev:7740"],
+        ..Default::default()
+    };
+
+    let merkle_hash_version = rc.detect_merkle_hash_version("DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B").await;
+
+    assert_eq!(merkle_hash_version, 2);
 }

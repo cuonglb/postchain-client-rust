@@ -79,23 +79,36 @@ pub struct Transaction<'a> {
     /// List of public keys of the signers
     pub signers: Option<Vec<Vec<u8>>>,
     /// List of signatures corresponding to the signers
-    pub signatures: Option<Vec<Vec<u8>>>
+    pub signatures: Option<Vec<Vec<u8>>>,
+    // Hash version (default is 1)
+    pub merkle_hash_version: u8
 }
 
 impl<'a> Default for Transaction<'a> {
+    /// Creates a new Transaction with default values and performs automatic initialization.
+    /// 
+    /// # Example
+    /// ```
+    /// let mut tx = Transaction {
+    ///     blockchain_rid: hex::decode(brid).unwrap(),
+    ///     operations: Some(ops),
+    ///     ..Default::default()  // This will trigger auto initialization
+    /// };
+    /// ```
     fn default() -> Self {
         Self {
             blockchain_rid: vec![],
             operations: None,   
             signers: None,      
-            signatures: None    
+            signatures: None,
+            merkle_hash_version: 1
         }
     }
 }
 
 impl<'a> Transaction<'a> {
     /// Creates a new transaction with the specified parameters.
-    /// 
+    ///
     /// # Arguments
     /// * `blockchain_rid` - Unique identifier of the blockchain
     /// * `operations` - Optional list of operations to be executed
@@ -112,7 +125,8 @@ impl<'a> Transaction<'a> {
             blockchain_rid,
             operations,
             signers,
-            signatures
+            signatures,
+            ..Default::default()
         }
     }
 
@@ -138,8 +152,7 @@ impl<'a> Transaction<'a> {
     /// A fixed-size 32 bytes containing the transaction RID
     pub fn tx_rid(&self) -> Result<[u8; 32], hasher::HashError> {
         let to_draw_gtx = gtv::to_draw_gtx(self);
-        //FIXME: Auto detect which hash version is using
-        gtv_hash(to_draw_gtx, 2)
+        gtv_hash(to_draw_gtx, self.merkle_hash_version)
     }
 
     /// Returns the hex-encoded transaction RID.
@@ -252,6 +265,7 @@ impl<'a> Transaction<'a> {
 
         Ok(())
     }
+
 }
 
 /// Signs a message digest using ECDSA with secp256k1.

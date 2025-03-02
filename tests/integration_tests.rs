@@ -159,9 +159,12 @@ async fn signed_transactions_integration_test() {
         Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
     ];
 
+    let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
+
     let mut tx = Transaction{
         blockchain_rid: hex::decode(brid.clone()).unwrap(),
         operations: Some(ops),
+        merkle_hash_version,
         ..Default::default()
     };
 
