@@ -34,7 +34,7 @@ jobs:
             - name: Run Integration Tests
               run: cargo test --lib --tests -- --nocapture
 
-              - name: Cleanup OpenVPN
+            - name: Cleanup OpenVPN
               if: always()
               run: |
                 sudo killall openvpn || true
