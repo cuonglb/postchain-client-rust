@@ -253,9 +253,9 @@ impl BinaryTreeFactory {
                 return Ok(Box::new(BinaryTreeNode::new_node(Some(left), Some(right), Some(value), NodeType::ArrayNode)));
             }
 
-            // This fix is backward compatible with hash version 1, but hash version 1 is incorrect!!!
+            // This fix is backward compatible with hash version 1.
             // For hash version 1, if we have a single array element that is also an array,
-            // we recursively process the inner array directly.
+            // we recursively process the inner array directly which is incorrect!!!
             if hash_version == 1 && array_value.len() == 1 {
                 if let Params::Array(_) = &array_value[0] {
                     return Self::build_tree(Box::new(array_value[0].clone()), hash_version);
