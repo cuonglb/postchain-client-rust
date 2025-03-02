@@ -138,7 +138,8 @@ impl<'a> Transaction<'a> {
     /// A fixed-size 32 bytes containing the transaction RID
     pub fn tx_rid(&self) -> Result<[u8; 32], hasher::HashError> {
         let to_draw_gtx = gtv::to_draw_gtx(self);
-        gtv_hash(to_draw_gtx)
+        //FIXME: Auto detect which hash version is using
+        gtv_hash(to_draw_gtx, 2)
     }
 
     /// Returns the hex-encoded transaction RID.
