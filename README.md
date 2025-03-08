@@ -241,7 +241,9 @@ async fn main() {
 }
 ```
 
-### 7. Parameter Types
+### 7. Parameter Types and Merkle Hash versions
+
+#### 7.1 Parameter Types
 
 The library supports various parameter types through the `Params` enum and Rust struct :
 
@@ -288,6 +290,39 @@ use postchain_client::utils::{operation::{serialize_bigdecimal, deserialize_bigd
         bigdecimal: bigdecimal::BigDecimal
     }
 ...
+```
+
+#### 7.3 Merkle Hash versions
+
+| Version | Description |
+|---|---|
+| 1 | If we have a single array element that is also an array, `process_array_node` function in `BinaryTreeFactory` recursively process the inner array directly. |
+| 2 | Fixed the issue of version 1 |
+
+How to detect which Merkle hash version is configured and used with a blockchain and use it when defining a transaction.
+```rust
+...
+
+let rc = RestClient{
+    node_url: vec!["http://localhost:7740"],
+    ..Default::default()
+};
+
+let blockchain_rid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
+
+let merkle_hash_version = rc.detect_merkle_hash_version(blockchain_rid).await;
+
+...
+
+let tx = Transaction{
+    blockchain_rid: hex::decode(blockchain_rid).unwrap(),
+    operations: Some(vec![]),
+    merkle_hash_version,
+    ..Default::default()
+};
+
+...
+
 ```
 
 ## Examples

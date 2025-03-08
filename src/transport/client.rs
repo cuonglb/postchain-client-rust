@@ -620,7 +620,9 @@ async fn client_detect_merkle_hash_version() {
         ..Default::default()
     };
 
-    let merkle_hash_version = rc.detect_merkle_hash_version("DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B").await;
+    let blockchain_rid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
+
+    let merkle_hash_version = rc.detect_merkle_hash_version(blockchain_rid).await;
 
     assert_eq!(merkle_hash_version, 2);
 }
