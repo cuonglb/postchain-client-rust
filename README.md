@@ -12,7 +12,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-postchain-client = "0.0.3"
+postchain-client = "0.0.4"
 tokio = { version = "1.42.0", features = ["rt"] }
 ```
 
@@ -20,7 +20,7 @@ tokio = { version = "1.42.0", features = ["rt"] }
 
 ```toml
 [dependencies]
-postchain-client = "0.0.3"
+postchain-client = "0.0.4"
 tokio = { version = "1.42.0", features = ["rt"] }
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -294,10 +294,10 @@ use postchain_client::utils::{operation::{serialize_bigdecimal, deserialize_bigd
 
 #### 7.3 Merkle Hash versions
 
-| Version | Description |
-|---|---|
-| 1 | If we have a single array element that is also an array, `process_array_node` function in `BinaryTreeFactory` recursively process the inner array directly. |
-| 2 | Fixed the issue of version 1 |
+| Version | Description | Default |
+|---|---|---|
+| 1 | If we have a single array element that is also an array, `process_array_node` function in `BinaryTreeFactory` recursively process the inner array directly. | * |
+| 2 | Fixed the issue of version 1 ||
 
 How to detect which Merkle hash version is configured and used with a blockchain and use it when defining a transaction.
 ```rust
