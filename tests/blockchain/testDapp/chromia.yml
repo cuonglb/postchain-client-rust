@@ -1,12 +1,22 @@
 blockchains:
   hello:
     module: main
+    moduleArgs:
+      lib.ft4.core.admin:
+        admin_pubkey: 02E04EDAF575241A2A543EC4040B595F62AA3414F36D6C7367E5EE60DEE7D68530
     config:
       blockstrategy:
         mininterblockinterval: 25
 compile:
-  rellVersion: 0.13.1
+  rellVersion: 0.14.2
 test:
   modules:
     - test.arithmetic_test
     - test.data_test
+libs:
+  ft4:
+    registry: https://gitlab.com/chromaway/ft4-lib.git
+    path: rell/src/lib/ft4
+    tagOrBranch: v1.1.0r
+    rid: x"FEEB0633698E7650D29DCCFE2996AD57CDC70AA3BDF770365C3D442D9DFC2A5E"
+    insecure: false

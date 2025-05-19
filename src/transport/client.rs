@@ -24,7 +24,7 @@ use crate::utils::transaction::{Transaction, TransactionStatus};
 /// - Node discovery and management
 /// - Query execution
 /// - Error handling
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RestClient<'a> {
     /// List of node URLs to connect to
     pub node_url: Vec<&'a str>,
@@ -341,7 +341,8 @@ impl<'a> RestClient<'a> {
                             return Ok(TransactionStatus::CONFIRMED)
                         },
                         Some("rejected") => {
-                            tracing::warn!("Transaction rejected!");
+                            let tx_rejected_reason = status.get("rejectReason").unwrap().to_string();
+                            tracing::warn!("Transaction {} is rejected with reason: {}", tx_rid, tx_rejected_reason);
                             return Ok(TransactionStatus::REJECTED)
                         },
                         _ => return Ok(TransactionStatus::UNKNOWN)
@@ -427,6 +428,40 @@ impl<'a> RestClient<'a> {
             None,
             Some(encode_str)
         ).await
+    }
+
+    /// Executes a query on the blockchain without any arguments.
+    ///
+    /// This is a convenience wrapper around the `query` method that simplifies querying
+    /// when no arguments are needed. It internally calls `query` with `None` for the
+    /// query arguments parameter.
+    ///
+    /// # Arguments
+    /// * `brid` - Blockchain RID (Resource Identifier)
+    /// * `query_prefix` - Optional prefix for the query endpoint
+    /// * `query_type` - Type of query to execute
+    /// * `query_params` - Optional query parameters
+    ///
+    /// # Returns
+    /// * `Result<RestResponse, RestError>` - Query response or error
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use postchain_client::transport::RestClient;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = RestClient::default();
+    /// let brid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
+    /// let response = client.query_no_args(brid, None, "get_block_height", None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn query_no_args(&self,
+            brid: &str,
+            query_prefix: Option<&str>,
+            query_type: &'a str,
+            query_params: Option<&'a mut Vec<(&'a str, &'a str)>>
+        ) -> Result<RestResponse, RestError> {
+        self.query::<&str>(brid, query_prefix, query_type, query_params, None).await
     }
 
     /// Makes a REST API request to a Postchain node.
