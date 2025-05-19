@@ -283,7 +283,7 @@ fn sign(digest: &[u8; 32], private_key: &[u8; 32]) -> Result<[u8; 64], secp256k1
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(private_key)?;
     let message = Message::from_digest(*digest);
-    let signature: Signature = secp.sign_ecdsa(&message, &secret_key);
+    let signature: Signature = secp.sign_ecdsa(message, &secret_key);
     let serialized_signature = signature.serialize_compact();
     Ok(serialized_signature)
 }
