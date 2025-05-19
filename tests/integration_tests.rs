@@ -146,8 +146,8 @@ fn read_private_key_from_env_var() -> [u8; 32] {
 async fn signed_transactions_integration_test() {
     let client = initialize_rest_client().await;
 
-    let mut rng = rand::thread_rng();
-    let random_integer: i32 = rng.gen_range(1..=100000);
+    let mut rng = rand::rng();
+    let random_integer: i32 = rng.random_range(1..=100000);
 
     let brid = client.0;
     let rc = client.1;
@@ -207,8 +207,8 @@ async fn signed_transactions_integration_test() {
 async fn unsigned_transactions_integration_test() {
     let client = initialize_rest_client().await;
 
-    let mut rng = rand::thread_rng();
-    let random_integer: i32 = rng.gen_range(1..=100000);
+    let mut rng = rand::rng();
+    let random_integer: i32 = rng.random_range(1..=100000);
 
     let brid = client.0;
     let brid_vec = hex::decode(brid.clone()).unwrap();

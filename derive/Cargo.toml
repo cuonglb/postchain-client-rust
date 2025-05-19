@@ -15,4 +15,4 @@ quote = "1.0"
 
 [dev-dependencies]
 num-bigint = "0.4.6"
-bigdecimal = "0.4.7"
+bigdecimal = "0.4.8"
