@@ -253,12 +253,16 @@ impl BinaryTreeFactory {
                 return Ok(Box::new(BinaryTreeNode::new_node(Some(left), Some(right), Some(value), NodeType::ArrayNode)));
             }
 
-            // This fix is backward compatible with hash version 1.
-            // For hash version 1, if we have a single array element that is also an array,
-            // we recursively process the inner array directly which is incorrect!!!
             if hash_version == 1 && array_value.len() == 1 {
-                if let Params::Array(_) = &array_value[0] {
-                    return Self::build_tree(Box::new(array_value[0].clone()), hash_version);
+                let av = array_value[0].clone();
+                match &av {
+                    Params::Array(_) => {
+                        return Self::build_tree(Box::new(av), hash_version);
+                    }
+                    Params::Dict(_) => {
+                        return Self::build_tree(Box::new(Params::Array(av.dict_to_array())), hash_version);
+                    }
+                    _ => (),
                 }
             }
 
@@ -605,4 +609,46 @@ fn test_gtv_hash_v2() {
     assert_eq!(hex::encode(result1), "5ad2414edcd34b9a8bdc22921b8a1b8cef6cab04115dd0e7eb000b05353b315a");
     assert_eq!(hex::encode(result2), "19605d1044cc20248e315f98f2d4c4aa7adfe6861607a0d000641837c3b962f8");
     assert_eq!(hex::encode(result3), "574b45c58e62ff7b786ee644579ffea593c89541498c1692fb8c99d811265166");
+}
+
+#[test]
+fn test_gtv_hash_v1_and_v2_of_array_of_dicts() {
+    let data = Params::Array(vec![
+        Params::Dict(std::collections::BTreeMap::from([
+            ("a".to_string(), Params::Text("b".to_string())),
+            ("c".to_string(), Params::Text("d".to_string()))
+        ]))
+    ]);
+
+    let hash_v1_result = "891cdf10ff613a90899ff0ffe1a515d8ed74fe71e36249f0b6dd175eec70805d";
+    let hash_v2_result = "9d2f6cfa72538e24584363ada5882c2be3f83d75aff598d0009330db22d961ff";
+
+    let result = gtv_hash(data.clone(), 1).unwrap();
+    assert_eq!(hex::encode(result), hash_v1_result);
+
+    let result = gtv_hash(data, 2).unwrap();
+    assert_eq!(hex::encode(result), hash_v2_result);
+
+    let a1 =  Params::Dict(std::collections::BTreeMap::from([
+        ("a1".to_string(), Params::Text("b".to_string()))
+    ]));
+    let c1 =  Params::Dict(std::collections::BTreeMap::from([
+        ("c1".to_string(), Params::Text("d".to_string()))
+    ]));
+
+    let data = Params::Array(vec![
+        Params::Dict(std::collections::BTreeMap::from([
+            ("a".to_string(), a1),
+            ("c".to_string(), c1)
+        ]))
+    ]);
+
+    let hash_v1_result = "132fc201e78c96fc2c563a6cff21fa12e45815871e34a267b72c41c0fe48f410";
+    let hash_v2_result = "ea56d66de794ad212183de103aca17df8eec177bf299ff203cc0aeb287a76495";
+
+    let result = gtv_hash(data.clone(), 1).unwrap();
+    assert_eq!(hex::encode(result), hash_v1_result);
+
+    let result = gtv_hash(data, 2).unwrap();
+    assert_eq!(hex::encode(result), hash_v2_result);
 }

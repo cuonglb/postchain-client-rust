@@ -295,12 +295,12 @@ impl Params {
     pub fn dict_to_array(self) -> Vec<Params> {
         match self {
             Params::Dict(dict) => {
-                let values: Vec<Params> = dict.into_iter()
-                    .filter_map(|(_, value)| {
-                        Some(value)
-                    })
-                    .collect();
-                values
+                let mut array_data = Vec::new();
+                for (key, value) in dict.into_iter() {
+                    array_data.push(Params::Text(key));
+                    array_data.push(value);
+                }
+                array_data
             },
             _ => panic!("Expected Params::Dict, found {:?}", self),
         }
