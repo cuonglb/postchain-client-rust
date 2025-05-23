@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
-use crate::ft4::utils::deserialize_hex_string;
+use crate::ft4::utils::{deserialize_hex_string, deserialize_args_to_vec_string};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthDescriptor {
     #[serde(rename = "account_id")]
     #[serde(deserialize_with = "deserialize_hex_string")]
     pub account_id: String,
-    pub args: Vec<serde_json::Value>,
+    #[serde(deserialize_with = "deserialize_args_to_vec_string")] 
+    pub args: Vec<String>,
     #[serde(rename = "auth_type")]
     pub auth_type: String,
     pub created: i64,

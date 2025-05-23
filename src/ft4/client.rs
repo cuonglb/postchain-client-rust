@@ -79,12 +79,7 @@ impl<'a> Ft4Client<'a> {
             },
             RestResponse::Bytes(bytes) => {
                 if let Ok(gtv_data) = gtv::decode(&bytes) {
-                    //let btree: BTreeMap<String, Params> = gtv_data.into();
-                    
-                    //let json_value = crate::ft4::utils::gtv_to_json(btree);
-
                     let json_value = gtv_data.to_json_value();
-                    
                     let result: T = serde_json::from_value(json_value)?;
                     Ok(QueryResult::Json(result))
                 } else {
@@ -124,6 +119,7 @@ impl<'a> Ft4Client<'a> {
     async fn process_transaction(
         &self,
         operations: Vec<Operation<'_>>,
+        signatures: Option<Vec<Vec<u8>>>,
         keypairs: &[&Keypair]
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut tx = Transaction {
@@ -131,6 +127,10 @@ impl<'a> Ft4Client<'a> {
             operations: Some(operations),
             ..Default::default()
         };
+
+        if let Some(signatures) = signatures {
+            tx.signatures = Some(signatures);
+        }
 
         if keypairs.len() == 1 {
             tx.sign(&keypairs[0].private_key)?;
@@ -266,7 +266,7 @@ impl<'a> Ft4Client<'a> {
             Operation::from_list("ft4.register_account", register_account_params)
         ];
 
-        self.process_transaction(operations, keypairs).await
+        self.process_transaction(operations, None, keypairs).await
     }
 
     pub async fn get_account_main_auth_descriptor(&self, account_id: &str) -> Result<AuthDescriptor, Box<dyn std::error::Error>> {
@@ -283,8 +283,77 @@ impl<'a> Ft4Client<'a> {
         })
     }
 
-    pub async fn update_main_auth_descriptor(&self) {
-        // https://docs.chromia.com/ft4/account-management/multisig
+    /// Updates the main authentication descriptor for an account.
+    ///
+    /// This function replaces the current main authentication descriptor with a new multi-signature
+    /// descriptor. The permissions for the new descriptor are copied from the current descriptor.
+    /// The transaction to update the descriptor must be signed by the currently authorized signers
+    /// of the account's main authentication descriptor.
+    ///
+    /// # Arguments
+    ///
+    /// * `auth_descriptor` - The **current** `AuthDescriptor` of the account's main authentication descriptor.
+    /// * `new_signer_public_keys` - A slice of references to the public keys ([u8; 33])
+    ///                              that will be the signers for the **new** main authentication descriptor.
+    /// * `signatures_required` - The number of signatures required for the **new** multi-signature descriptor.
+    /// * `signing_keypairs` - A slice of references to the Keypair objects that are
+    ///                        **currently** authorized to sign transactions for this account
+    ///                        and will be used to sign the update transaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the main authentication descriptor was
+    ///                                            successfully updated, or an error otherwise.
+    pub async fn update_main_auth_descriptor(
+        &self,
+        auth_descriptor: &AuthDescriptor,
+        new_signer_public_keys: &[&[u8; 33]],
+        signatures_required: i64,
+        signing_keypairs: &[&Keypair],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // Construct the new auth descriptor parameters
+        let auth_permissions = auth_descriptor.args.clone();
+        let mut auth_permission_params = Vec::new();
+
+        for auth_permission in auth_permissions.iter() {
+            auth_permission_params.push(QueryParams::Text(auth_permission.to_string()));
+        }
+
+        let auth_sigs = new_signer_public_keys.iter().map(|public_key| {
+            Params::ByteArray(public_key.to_vec())
+        }).collect::<Vec<_>>();
+
+        let auth_body = Params::Array(vec![
+            Params::Array(auth_permission_params),
+            Params::Integer(signatures_required),
+            Params::Array(auth_sigs),
+        ]);
+
+        // Expiration rules, must be null ("never expire") for the main auth descriptor ("owner")
+        let auth_rules = Params::Null;
+
+        let auth_descriptors = vec![
+            QueryParams::Integer(1), // auth_type = 1 for multi-signature
+            auth_body,
+            auth_rules
+        ];
+
+        let update_main_auth_descriptor_params = vec![
+            Params::Array(auth_descriptors)
+        ];
+
+        let ft_auth = vec![
+            Params::ByteArray(hex::decode(&auth_descriptor.account_id).unwrap()),
+            Params::ByteArray(hex::decode(&auth_descriptor.id).unwrap())
+        ];
+
+        let operations = vec![
+            Operation::from_list("ft4.ft_auth", ft_auth),
+            Operation::from_list("ft4.update_main_auth_descriptor", update_main_auth_descriptor_params)
+        ];
+
+        // Process the transaction, signing with the currently authorized keypairs
+        self.process_transaction(operations, None, signing_keypairs).await
     }
 
     #[cfg(test)]
@@ -357,4 +426,30 @@ async fn test_ft4_get_account_main_auth_descriptor() {
     
     let auth_descriptor = result.unwrap();
     assert_eq!(auth_descriptor.account_id, account_id.to_uppercase());
+}
+
+#[tokio::test]
+async fn test_ft4_update_main_auth_descriptor() {
+    let ft4_client = Ft4Client::setup_test_client().await.unwrap();
+    let keypair = generate_keypair();
+    let bob_keypair = generate_keypair();
+    let alice_keypair = generate_keypair();
+
+    let account_id = Ft4Client::get_account_id(&keypair.public_key).unwrap();   
+
+    let result = ft4_client.register_account(&[&keypair], None, None).await;
+    assert_eq!(result.is_ok(), true, "Failed to register account with single signature");
+
+    let auth_descriptor = ft4_client.get_account_main_auth_descriptor(&account_id).await;
+    assert!(auth_descriptor.is_ok(), "Failed to get account main auth descriptor");
+
+
+    let result = ft4_client.update_main_auth_descriptor(
+        &auth_descriptor.unwrap(),
+        &[&keypair.public_key, &bob_keypair.public_key, &alice_keypair.public_key],
+        2,
+        &[&keypair, &bob_keypair, &alice_keypair]
+    ).await;
+
+    assert!(result.is_ok(), "Failed to update main auth descriptor");
 }
