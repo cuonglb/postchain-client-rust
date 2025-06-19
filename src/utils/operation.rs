@@ -200,6 +200,7 @@ where
 /// An operation can contain either a dictionary of named parameters
 /// or a list of unnamed parameters, along with an operation name.
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct Operation<'a> {
     /// Dictionary of named parameters
     /// List of unnamed parameters
@@ -209,15 +210,6 @@ pub struct Operation<'a> {
     pub operation_name: Option<&'a str>,
 }
 
-impl<'a> Default for Operation<'a> {
-    fn default() -> Self {
-        Self {
-            dict: None,
-            list: None,
-            operation_name: None,
-        }
-    }
-}
 
 /// Checks if a vector of JSON values represents a byte array.
 /// 
@@ -226,7 +218,7 @@ impl<'a> Default for Operation<'a> {
 /// 
 /// # Returns
 /// true if all values are valid u8 numbers
-fn is_vec_u8(value: &Vec<serde_json::Value>) -> bool {
+fn is_vec_u8(value: &[serde_json::Value]) -> bool {
     value.iter().all(|v| {
             if let serde_json::Value::Number(n) = v {
                 n.is_u64() && n.as_u64().unwrap() <= u8::MAX as u64
@@ -337,11 +329,7 @@ impl Params {
     pub fn dict_to_array_values(self) -> Vec<Params> {
         match self {
             Params::Dict(dict) => {
-                let values: Vec<Params> = dict.into_iter()
-                    .filter_map(|(_, value)| {
-                        Some(value)
-                    })
-                    .collect();
+                let values: Vec<Params> = dict.into_values().collect();
                 values
             },
             _ => panic!("Expected Params::Dict, found {:?}", self),
@@ -758,11 +746,11 @@ impl From<Params> for Vec<u8> {
 /// 
 /// # Panics
 /// Panics if the parameter is not an Array type
-impl Into<Vec<Params>> for Params {
-    fn into(self) -> Vec<Params> {
-        match self {
+impl From<Params> for Vec<Params> {
+    fn from(val: Params) -> Self {
+        match val {
             Params::Array(array) => array,
-            _ => panic!("Cannot convert {:?} into Vec<Params>", self),
+            _ => panic!("Cannot convert {:?} into Vec<Params>", val),
         }
     }
 }
@@ -774,11 +762,11 @@ impl Into<Vec<Params>> for Params {
 /// 
 /// # Panics
 /// Panics if the parameter is not a Dict type
-impl Into<BTreeMap<String, Params>> for Params {
-    fn into(self) -> BTreeMap<String, Params> {
-        match self {
+impl From<Params> for BTreeMap<String, Params> {
+    fn from(val: Params) -> Self {
+        match val {
             Params::Dict(dict) => dict,
-            _ => panic!("Cannot convert {:?} into BTreeMap", self),
+            _ => panic!("Cannot convert {:?} into BTreeMap", val),
         }
     }
 }
@@ -804,7 +792,7 @@ fn test_serialize_struct_to_param_dict() {
 
     let ts1 = TestStruct1 {
         foo: "foo".to_string(), bar: 1, ok: true,
-        bigint: num_bigint::BigInt::from(170141183460469231731687303715884105727 as i128),
+        bigint: num_bigint::BigInt::from(170141183460469231731687303715884105727_i128),
         nested_struct: TestStruct2{foo: "bar".to_string()}, bytearray: vec![1, 2, 3, 4, 5]
     };
 
@@ -844,7 +832,7 @@ fn test_deserialize_param_dict_to_struct() {
         t: Option<bool>
     }
 
-    let bigint = num_bigint::BigInt::from(100000000000000000000000 as i128);
+    let bigint = num_bigint::BigInt::from(100000000000000000000000_i128);
     let bytearray_value = b"1234";
     let bytearray_base64_encoded = general_purpose::STANDARD.encode(bytearray_value);
 
@@ -852,9 +840,9 @@ fn test_deserialize_param_dict_to_struct() {
         t: None,
         x: 1, y: 2, z: "foo".to_string(), dict: TestNestedStruct {
             bigint_as_string: bigint.to_string(),
-            bigint_as_num_bigint: (100000000000000000000000 as i128).into()
+            bigint_as_num_bigint: 100000000000000000000000_i128.into()
         }, l: true, n: BigDecimal::from_str("3.14").unwrap(), m: bytearray_base64_encoded, array: vec![
-            serde_json::Value::Number(serde_json::Number::from(1 as i64)),
+            serde_json::Value::Number(serde_json::Number::from(1_i64)),
             serde_json::Value::String("foo".to_string()),
             ]
     };
