@@ -143,7 +143,7 @@ fn read_private_key_from_env_var() -> [u8; 32] {
 
 #[allow(unused_assignments)]
 #[tokio::test]
-async fn signed_transactions_integration_test() {
+async fn signed_transaction_integration_test() {
     let client = initialize_rest_client().await;
 
     let mut rng = rand::rng();
@@ -177,19 +177,34 @@ async fn signed_transactions_integration_test() {
     } else {
         assert_roundtrips_transaction(&rc, &tx, operation_name, &brid).await;
     }
+}
+
+#[allow(unused_assignments)]
+#[tokio::test]
+async fn signed_transaction_with_nested_arguments_integration_test() {
+    let client = initialize_rest_client().await;
+
+    let brid = client.0;
+    let rc = client.1;
+
+    let private_key_from_env = read_private_key_from_env_var();
+
+    let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
 
     let operation_name = "nestedArguments";
-    let params = vec![
-    ("multiStruct", Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())])),
-    ("arrayExample", Params::Array(vec![Params::Text("foo".to_string())])),
-    ];
+
     let ops = vec![
-        Operation::from_dict(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name, vec![
+            Params::Array(vec![
+                Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())]),
+                Params::Array(vec![Params::Text("foo".to_string())]),
+            ])
+        ])
     ];
     let mut tx = Transaction{
         blockchain_rid: hex::decode(brid.clone()).unwrap(),
         operations: Some(ops),
+        merkle_hash_version,
         ..Default::default()
     };
 
@@ -656,10 +671,10 @@ async fn queries_integration_test_get_nodes_from_directory() {
         .await;
 
     let expected_result = vec![
-        "https://node4.devnet1.chromia.dev:7740",
-        "https://node7.devnet1.chromia.dev:7740",
-        "https://node5.devnet1.chromia.dev:7740",
-        "https://node6.devnet1.chromia.dev:7740",
+        "https://node4.devnet1.chromia.dev",
+        "https://node7.devnet1.chromia.dev",
+        "https://node5.devnet1.chromia.dev",
+        "https://node6.devnet1.chromia.dev",
     ];
 
     match result {
