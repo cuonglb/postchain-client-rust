@@ -8,7 +8,6 @@ use postchain_client::{
 
 use std::{collections::BTreeMap, str::FromStr};
 use rand::Rng;
-use tracing_subscriber;
 use ctor::ctor;
 
 #[ctor]
@@ -26,7 +25,7 @@ async fn assert_roundtrips<'a>(
     query_args: Option<&'a mut Vec<(&str, Params)>>,
     expected_value: &str,
 ) {
-    let do_query = rc.query(&brid, None, query_type, None, query_args).await;
+    let do_query = rc.query(brid, None, query_type, None, query_args).await;
 
     print!("test query = {} ... ", query_type);
 
@@ -103,7 +102,7 @@ async fn initialize_rest_client() -> (String, RestClient<'static>) {
         let result = rc.get_nodes_from_directory(&brid).await;
 
         if let Err(ref error) = result {
-            if rc.print_error(&error, false) {
+            if rc.print_error(error, false) {
                 std::process::exit(0);
             }
         }

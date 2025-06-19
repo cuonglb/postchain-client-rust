@@ -67,7 +67,7 @@ pub fn write_explicit_element<T: asn1::Asn1Writable>(writer: &mut asn1::Writer, 
   writer.write_tlv(tag, |dest| asn1::Writer::new(dest).write_element(val))
 }
 
-impl<'a> GTVParams for Params {
+impl GTVParams for Params {
     fn to_writer(&self, writer: &mut asn1::Writer) -> asn1::WriteResult {
         match self {
             Params::Array(val) => {
@@ -161,7 +161,7 @@ pub fn encode_tx<'a>(tx: &Transaction<'a>) -> Vec<u8> {
                 
                   if let Some(signers) = &tx.signers {
                     for sig in signers {
-                      writer.write_element(&Choice::OCTETSTRING(&sig))?;
+                      writer.write_element(&Choice::OCTETSTRING(sig))?;
                     }
                   }
 
@@ -177,7 +177,7 @@ pub fn encode_tx<'a>(tx: &Transaction<'a>) -> Vec<u8> {
              
               if let Some(signatures) = &tx.signatures {
                 for sig in signatures {
-                  writer.write_element(&Choice::OCTETSTRING(&sig))?;
+                  writer.write_element(&Choice::OCTETSTRING(sig))?;
                 }
               }
 
@@ -201,9 +201,9 @@ pub fn encode_tx<'a>(tx: &Transaction<'a>) -> Vec<u8> {
 /// # Returns
 /// 
 /// * `Vec<u8>` - Encoded query as a byte vector
-pub fn encode<'a>(
+pub fn encode(
     query_type: &str,
-    query_args: Option<&'a mut Vec<(&str, Params)>>,
+    query_args: Option<&mut Vec<(&str, Params)>>,
 ) -> Vec<u8> {
     asn1::write(|writer| {
         write_explicit_element(writer,
@@ -263,8 +263,8 @@ fn encode_tx_body<'a>(writer: &mut asn1::Writer, operation: &Operation<'a>) -> a
 /// # Returns
 /// 
 /// * `asn1::WriteResult` - Result of the write operation
-fn encode_body<'a>(writer: &mut asn1::Writer,
-  query_args: &Option<&'a mut Vec<(&str, Params)>>)
+fn encode_body(writer: &mut asn1::Writer,
+  query_args: &Option<&mut Vec<(&str, Params)>>)
   -> asn1::WriteResult {
   write_explicit_element(writer,
       &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
@@ -397,36 +397,34 @@ fn decode_sequence_dict<'a>(parser: &mut asn1::Parser<'a>, btreemap: &mut BTreeM
 /// # Returns
 /// 
 /// * `Result<Params, ParseError>` - The decoded value or an error if decoding fails
-pub fn decode<'a>(data: &'a [u8]) -> Result<Params, ParseError> {
+pub fn decode(data: &[u8]) -> Result<Params, Box<ParseError>> {
   let tag = asn1::Tag::from_bytes(data).unwrap();
   let tag_num = tag.0.as_u8().unwrap() & 0x1f;
 
-  if vec![0, 1, 2, 3, 6].contains(&tag_num) {
+  if [0, 1, 2, 3, 6].contains(&tag_num) {
     asn1::parse(data, |d| {
         let res_choice = Choice::parse(d);
         match res_choice {
             Ok(val) => Ok(decode_simple(val)),
-            Err(error) => Err(error),
+            Err(error) => Err(Box::new(error)),
         }
     })
+  } else if tag_num == 4 {
+    let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 4>>(data).unwrap();
+    result.into_inner().parse(|parser| {
+      let mut btree_map_new: BTreeMap<String, Params> = BTreeMap::new();
+      decode_sequence_dict(parser, &mut btree_map_new);
+      Ok(Params::Dict(btree_map_new))
+    })
+  } else if tag_num == 5 {
+    let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 5>>(data).unwrap();
+    result.into_inner().parse(|parser|{
+      let mut vect_array_new: Vec<Params> = Vec::new();
+      decode_sequence_array(parser, &mut vect_array_new);
+      Ok(Params::Array(vect_array_new))
+    })
   } else {
-    if tag_num == 4 {
-      let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 4>>(data).unwrap();
-      result.into_inner().parse(|parser| {
-        let mut btree_map_new: BTreeMap<String, Params> = BTreeMap::new();
-        decode_sequence_dict(parser, &mut btree_map_new);
-        Ok(Params::Dict(btree_map_new))
-      })
-    } else if tag_num == 5 {
-      let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 5>>(data).unwrap();
-      result.into_inner().parse(|parser|{
-        let mut vect_array_new: Vec<Params> = Vec::new();
-        decode_sequence_array(parser, &mut vect_array_new);
-        Ok(Params::Array(vect_array_new))
-      })
-    } else {
-      Ok(Params::Null)
-    }
+    Ok(Params::Null)
   }
 }
 
@@ -438,8 +436,8 @@ pub fn decode<'a>(data: &'a [u8]) -> Result<Params, ParseError> {
 /// 
 /// # Returns
 /// 
-/// * `Result<Params, ParseError>` - The decoded transaction or an error if decoding fails
-pub fn decode_tx<'a>(data: &'a [u8]) -> Result<Params, ParseError> {
+/// * `Result<Params, Box<ParseError>>` - The decoded transaction or an error if decoding fails
+pub fn decode_tx(data: &[u8]) -> Result<Params, Box<ParseError>> {
   decode(data)
 }
 
@@ -524,8 +522,8 @@ pub fn to_draw_gtx<'a>(tx: &'a Transaction<'a>) -> Params {
 /// 
 /// * `query_args` - Optional query arguments to test
 /// * `expected_value` - Expected hexadecimal string after encoding
-fn assert_roundtrips<'a>(
-  query_args: Option<&'a mut Vec<(&str, Params)>>,
+fn assert_roundtrips(
+  query_args: Option<&mut Vec<(&str, Params)>>,
   expected_value: &str) {
     let result = asn1::write(|writer| {
       encode_body(writer, &query_args)?;
@@ -542,11 +540,11 @@ fn assert_roundtrips<'a>(
 /// * `value` - Value to test
 /// * `expected_decode` - Expected decoded value
 /// * `expected_value` - Expected hexadecimal string after encoding
-fn assert_roundtrips_value<'a>(
+fn assert_roundtrips_value(
   value: &Params,
   expected_decode: &Params,
   expected_value: &str) {
-    let encode_result = encode_value(&value);
+    let encode_result = encode_value(value);
     assert_eq!(expected_value, hex::encode(encode_result.clone()));
 
     let decode_result = decode(&encode_result).unwrap();
@@ -821,7 +819,7 @@ fn gtv_test_simple_integer() {
 
 #[test]
 fn gtv_test_simple_big_integer() {
-  assert_roundtrips_simple(Params::BigInteger(num_bigint::BigInt::from(1234567890123456789 as i128)), "a60a0208112210f47de98115");
+  assert_roundtrips_simple(Params::BigInteger(num_bigint::BigInt::from(1234567890123456789_i128)), "a60a0208112210f47de98115");
 }
 
 #[test]
@@ -877,7 +875,7 @@ fn gtv_test_simple_null_decode() {
 #[test]
 fn gtv_test_simple_big_integer_decode() {
   assert_roundtrips_simple_decode("a60a0208112210f47de98115", 
-    Params::BigInteger(num_bigint::BigInt::from(1234567890123456789 as i128)));
+    Params::BigInteger(num_bigint::BigInt::from(1234567890123456789_i128)));
 }
 
 #[test]
@@ -958,7 +956,7 @@ fn gtv_test_sequence_complex_mix_dict_array_decode() {
   data_btreemap.insert("dict".to_string(), Params::Dict(dict_in));
   data_btreemap.insert("array".to_string(), Params::Array(vec![
     Params::Text("test array".to_string()),
-    Params::BigInteger(num_bigint::BigInt::from(123456 as i128)),
+    Params::BigInteger(num_bigint::BigInt::from(123456_i128)),
     Params::Array(vec![
       Params::Text("test array 2".to_string())
     ])

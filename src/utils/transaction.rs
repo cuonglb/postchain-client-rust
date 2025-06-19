@@ -139,8 +139,8 @@ impl<'a> Transaction<'a> {
     /// Hex-encoded string of the GTV-encoded transaction
     pub fn gvt_hex_encoded(&self) -> String {
         let gtv_e = gtv::encode_tx(self);
-        let hex_encode = hex::encode(gtv_e);
-        hex_encode
+        
+        hex::encode(gtv_e)
     }
 
     /// Computes the unique identifier (RID) of this transaction.

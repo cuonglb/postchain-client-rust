@@ -58,12 +58,12 @@ pub enum RestRequestMethod {
 
 impl<'a> Default for RestClient<'a> {
     fn default() -> Self {
-        return RestClient {
+        RestClient {
             node_url: vec!["http://localhost:7740"],
             request_time_out: 30,
             poll_attemps: 5,
             poll_attemp_interval_time: 5
-        };
+        }
     }
 }
 
@@ -93,12 +93,12 @@ impl Error for RestError {}
 
 impl Default for RestError {
     fn default() -> Self {
-        return RestError {
+        RestError {
             status_code: None,
             error_str: None,
             error_json: None,
             type_error: TypeError::FromRestApi,
-        };
+        }
     }
 }
 
@@ -140,7 +140,7 @@ impl<'a> RestClient<'a> {
         let directory_brid = self.get_blockchain_rid(0).await?;
 
         let path_segments = &["query", &directory_brid];
-        let mut query_params = vec![
+        let query_params = vec![
             ("type", "cm_get_blockchain_api_urls"),
             ("blockchain_rid", brid),
         ];
@@ -151,7 +151,7 @@ impl<'a> RestClient<'a> {
             .postchain_rest_api(
                 RestRequestMethod::GET,
                 Some(path_segments),
-                Some(&mut query_params),
+                Some(&query_params),
                 query_body_json,
                 query_body_raw
             )
@@ -263,7 +263,7 @@ impl<'a> RestClient<'a> {
 
         if let Ok(RestResponse::Json(json_val)) = self.postchain_rest_api(
             RestRequestMethod::GET,
-            Some(&[&"config".to_string(), brid, &"features".to_string()]),
+            Some(&["config", brid, "features"]),
             None,
             None,
             None
@@ -283,7 +283,7 @@ impl<'a> RestClient<'a> {
     ///
     /// # Arguments
     /// * `node_urls` - New list of node URLs to use
-    pub fn update_node_urls(&mut self, node_urls: &'a Vec<String>) {
+    pub fn update_node_urls(&mut self, node_urls: &'a [String]) {
         self.node_url = node_urls.iter().map(String::as_str).collect();
     }
 
@@ -416,7 +416,7 @@ impl<'a> RestClient<'a> {
                 .collect()
         });
 
-        let encode_str = crate::encoding::gtv::encode(query_type, query_args_converted.as_mut().map(|v| v.as_mut()));      
+        let encode_str = crate::encoding::gtv::encode(query_type, query_args_converted.as_mut());      
         
         tracing::info!("Querying {} to {}", query_type, brid); 
 
@@ -489,7 +489,7 @@ impl<'a> RestClient<'a> {
         node_index: usize,
     ) -> Result<RestResponse, RestError> {
 
-        let mut url = Url::parse(&self.node_url[node_index]).unwrap();
+        let mut url = Url::parse(self.node_url[node_index]).unwrap();
 
         tracing::info!("Requesting on API endpoint: {}", url);
 
