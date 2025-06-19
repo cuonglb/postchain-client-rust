@@ -52,13 +52,11 @@ pub fn generate_keypair() -> Keypair {
 
 pub struct Ft4Client<'a> {
     transport: RestClient<'a>,
-    blockchain_rid: String
+    blockchain_rid: String,
+    merkle_hash_version: u8
 }
 
 impl<'a> Ft4Client<'a> {
-    pub fn new(transport: RestClient<'a>, blockchain_rid: String) -> Self {
-        Self { transport, blockchain_rid }
-    }
 
     fn get_account_id(public_key: &[u8; 33]) 
     -> Result<String, crate::utils::hasher::HashError> {
@@ -125,6 +123,7 @@ impl<'a> Ft4Client<'a> {
         let mut tx = Transaction {
             blockchain_rid: hex::decode(&self.blockchain_rid).unwrap(),
             operations: Some(operations),
+            merkle_hash_version: self.merkle_hash_version,
             ..Default::default()
         };
 
@@ -357,8 +356,8 @@ impl<'a> Ft4Client<'a> {
     }
 
     #[cfg(test)]
-    pub async fn setup_test_client() -> Result<Self, Box<dyn std::error::Error>> {
-        tracing_subscriber::fmt::init();
+    pub async fn setup_local_test_client() -> Result<Self, Box<dyn std::error::Error>> {
+        let _ = tracing_subscriber::fmt::try_init();
 
         let transport = RestClient {
             node_url: vec!["http://localhost:7740"],
@@ -372,13 +371,32 @@ impl<'a> Ft4Client<'a> {
             return Err("Test must be run in local environment".into());
         }
 
-        Ok(Self { transport, blockchain_rid } )
+        Ok(Self { transport, blockchain_rid, merkle_hash_version: 2 } )
+    }
+
+    #[cfg(test)]
+    pub fn setup_devnet1_test_client() -> Self {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let transport = RestClient {
+            node_url: vec![
+                "https://node4.devnet1.chromia.dev",
+                "https://node5.devnet1.chromia.dev",
+                "https://node6.devnet1.chromia.dev",
+                "https://node7.devnet1.chromia.dev",
+            ],
+            ..Default::default()
+        };
+
+        let ec_rid = "7A37DD331AC8FED64EEFCCA231B0F975DE7F4371CE5CA44105A5B117DF6DE251".to_string();
+
+        Self { transport, blockchain_rid: ec_rid, merkle_hash_version: 2 }
     }
 }
 
 #[tokio::test]
 async fn test_ft4_register_account_single_signature() {
-    let ft4_client = Ft4Client::setup_test_client().await.unwrap();
+    let ft4_client = Ft4Client::setup_devnet1_test_client();
 
     // Test with default auth descriptor (A, T)
     let keypair1 = generate_keypair();
@@ -393,7 +411,7 @@ async fn test_ft4_register_account_single_signature() {
 
 #[tokio::test]
 async fn test_ft4_register_account_multi_signatures() {
-    let ft4_client = Ft4Client::setup_test_client().await.unwrap();
+    let ft4_client = Ft4Client::setup_devnet1_test_client();
 
     let keypair1 = generate_keypair();
     let keypair2 = generate_keypair();
@@ -414,7 +432,7 @@ fn test_get_account_id_from_public_key() {
 
 #[tokio::test]
 async fn test_ft4_get_account_main_auth_descriptor() {
-    let ft4_client = Ft4Client::setup_test_client().await.unwrap();
+    let ft4_client = Ft4Client::setup_devnet1_test_client();
     let keypair = generate_keypair();
     let account_id = Ft4Client::get_account_id(&keypair.public_key).unwrap();
 
@@ -430,7 +448,7 @@ async fn test_ft4_get_account_main_auth_descriptor() {
 
 #[tokio::test]
 async fn test_ft4_update_main_auth_descriptor() {
-    let ft4_client = Ft4Client::setup_test_client().await.unwrap();
+    let ft4_client = Ft4Client::setup_devnet1_test_client();
     let keypair = generate_keypair();
     let bob_keypair = generate_keypair();
     let alice_keypair = generate_keypair();
