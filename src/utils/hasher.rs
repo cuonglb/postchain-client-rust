@@ -255,14 +255,13 @@ impl BinaryTreeFactory {
 
             if hash_version == 1 && array_value.len() == 1 {
                 let av = array_value[0].clone();
-                match &av {
-                    Params::Array(_) => {
-                        return Self::build_tree(Box::new(av), hash_version);
-                    }
-                    Params::Dict(_) => {
-                        return Self::build_tree(Box::new(Params::Array(av.dict_to_array())), hash_version);
-                    }
-                    _ => (),
+
+                if let Params::Array(_) = av {
+                    return Self::build_tree(Box::new(av), hash_version);
+                }
+
+                if let Params::Dict(_) = av {
+                    return Self::build_tree(Box::new(Params::Array(av.dict_to_array())), hash_version);
                 }
             }
 

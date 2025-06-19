@@ -13,7 +13,7 @@ use ctor::ctor;
 
 #[ctor]
 fn initialize_test_envs() {
-    let _ = tracing_subscriber::fmt::try_init();
+    tracing_subscriber::fmt::init();
 }
 
 const POSTCHAIN_SINGLE_NODE_API_URL: &str = "http://localhost:7740";
@@ -143,45 +143,6 @@ fn read_private_key_from_env_var() -> [u8; 32] {
 
 #[allow(unused_assignments)]
 #[tokio::test]
-async fn signed_transaction_with_nested_arguments_integration_test() {
-    let client = initialize_rest_client().await;
-
-    let brid = client.0;
-    let rc = client.1;
-
-    let private_key_from_env = read_private_key_from_env_var();
-
-    let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
-
-    let operation_name = "nestedArguments";
-
-    let ops = vec![
-        Operation::from_list(operation_name, vec![
-            Params::Array(vec![
-                Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())]),
-                Params::Array(vec![Params::Text("foo".to_string())]),
-            ])
-        ])
-    ];
-
-    let mut tx = Transaction{
-        blockchain_rid: hex::decode(brid.clone()).unwrap(),
-        operations: Some(ops),
-        merkle_hash_version,
-        ..Default::default()
-    };
-
-    let result = tx.sign(&private_key_from_env);
-
-    if let Err(error) = result {
-        eprint!("TX sign error {:?}", error);
-    } else {
-        assert_roundtrips_transaction(&rc, &tx, operation_name, &brid).await;
-    }
-}
-
-#[allow(unused_assignments)]
-#[tokio::test]
 async fn signed_transaction_integration_test() {
     let client = initialize_rest_client().await;
 
@@ -208,6 +169,44 @@ async fn signed_transaction_integration_test() {
     };
 
     let private_key_from_env = read_private_key_from_env_var();
+
+    let result = tx.sign(&private_key_from_env);
+
+    if let Err(error) = result {
+        eprint!("TX sign error {:?}", error);
+    } else {
+        assert_roundtrips_transaction(&rc, &tx, operation_name, &brid).await;
+    }
+}
+
+#[allow(unused_assignments)]
+#[tokio::test]
+async fn signed_transaction_with_nested_arguments_integration_test() {
+    let client = initialize_rest_client().await;
+
+    let brid = client.0;
+    let rc = client.1;
+
+    let private_key_from_env = read_private_key_from_env_var();
+
+    let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
+
+    let operation_name = "nestedArguments";
+
+    let ops = vec![
+        Operation::from_list(operation_name, vec![
+            Params::Array(vec![
+                Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())]),
+                Params::Array(vec![Params::Text("foo".to_string())]),
+            ])
+        ])
+    ];
+    let mut tx = Transaction{
+        blockchain_rid: hex::decode(brid.clone()).unwrap(),
+        operations: Some(ops),
+        merkle_hash_version,
+        ..Default::default()
+    };
 
     let result = tx.sign(&private_key_from_env);
 

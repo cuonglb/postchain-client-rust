@@ -282,16 +282,25 @@ impl Params {
         val.to_string()
     }
 
-    /// Converts a dictionary parameter to an array of its values.
-    /// 
-    /// # Arguments
-    /// * `self` - Dictionary parameter to convert
-    /// 
+    /// Converts a dictionary parameter into an array of alternating keys and values.
+    ///
     /// # Returns
-    /// Vector containing the values from the dictionary
-    /// 
+    ///
+    /// A vector where each key from the dictionary is followed by its corresponding value as `Params`.
+    ///
     /// # Panics
-    /// Panics if self is not a Params::Dict
+    ///
+    /// Panics if called on a `Params` variant that is not `Dict`.
+    ///
+    /// # Example
+    /// ```
+    /// let dict = Params::Dict(BTreeMap::from([
+    ///     ("a".to_string(), Params::Integer(1)),
+    ///     ("b".to_string(), Params::Text("foo".to_string())),
+    /// ]));
+    /// let arr = dict.dict_to_array();
+    /// // arr = [Params::Text("a"), Params::Integer(1), Params::Text("b"), Params::Text("foo")]
+    /// ```
     pub fn dict_to_array(self) -> Vec<Params> {
         match self {
             Params::Dict(dict) => {
@@ -301,6 +310,39 @@ impl Params {
                     array_data.push(value);
                 }
                 array_data
+            },
+            _ => panic!("Expected Params::Dict, found {:?}", self),
+        }
+    }
+
+    /// Converts a dictionary parameter to an array of its values.
+    ///
+    /// # Returns
+    ///
+    /// A vector containing only the values from the dictionary, in the order of their keys.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on a `Params` variant that is not `Dict`.
+    ///
+    /// # Example
+    /// ```
+    /// let dict = Params::Dict(BTreeMap::from([
+    ///     ("a".to_string(), Params::Integer(1)),
+    ///     ("b".to_string(), Params::Text("foo".to_string())),
+    /// ]));
+    /// let arr = dict.dict_to_array_values();
+    /// // arr = [Params::Integer(1), Params::Text("foo")]
+    /// ```
+    pub fn dict_to_array_values(self) -> Vec<Params> {
+        match self {
+            Params::Dict(dict) => {
+                let values: Vec<Params> = dict.into_iter()
+                    .filter_map(|(_, value)| {
+                        Some(value)
+                    })
+                    .collect();
+                values
             },
             _ => panic!("Expected Params::Dict, found {:?}", self),
         }
