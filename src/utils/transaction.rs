@@ -48,7 +48,8 @@
 
 use crate::encoding::gtv;
 use crate::utils::hasher::gtv_hash;
-use super::{hasher, operation::Operation};
+use crate::encoding::gtv::decode as gtv_decode;
+use super::{hasher, operation::Operation, operation::Params as Op_Params};
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Message, ecdsa::Signature};
 use hex::FromHex;
 
@@ -104,6 +105,15 @@ impl<'a> Default for Transaction<'a> {
             merkle_hash_version: 1
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TransactionConfirmationProofData {
+  pub block_header: Vec<u8>,
+  pub hash: Vec<u8>,
+  pub tx_index: i64,
+  pub witness: Vec<u8>,
+  pub merkle_proof_tree: Vec<crate::utils::operation::Params>
 }
 
 impl<'a> Transaction<'a> {
@@ -266,6 +276,64 @@ impl<'a> Transaction<'a> {
         Ok(())
     }
 
+    /// Decodes a hexadecimal string representation of a transaction confirmation proof
+    /// into a `TransactionConfirmationProofData` struct.
+    ///
+    /// This function is used to parse the proof data received from the blockchain
+    /// to verify the inclusion of a transaction in a block. The input `proof`
+    /// is expected to be a hex-encoded GTV (Generic Tree Value) structure
+    /// representing the confirmation proof.
+    ///
+    /// # Arguments
+    /// * `proof` - A string slice containing the hex-encoded confirmation proof data.
+    ///
+    /// # Returns
+    /// A `Result` which is:
+    /// - `Ok(TransactionConfirmationProofData)` if the proof is successfully decoded and
+    ///   parsed into the `TransactionConfirmationProofData` struct.
+    /// - `Err(String)` if the input string is not valid hexadecimal, if the GTV
+    ///   decoding fails, or if the decoded GTV structure does not match the
+    ///   expected format for a `TransactionConfirmationProofData`.
+    ///
+    /// # Errors
+    /// This function will return an error string if:
+    /// - The `proof` string cannot be hex-decoded.
+    /// - The decoded bytes cannot be successfully GTV-decoded.
+    /// - The root of the GTV-decoded data is not a dictionary (`Op_Params::Dict`).
+    /// - Any required field (`blockHeader`, `hash`, `txIndex`, `witness`, `merkleProofTree`)
+    ///   is missing or has an incorrect type within the decoded GTV dictionary.
+    ///
+    /// # Examples
+    /// ```
+    /// use crate::utils::transaction::{Transaction, TransactionConfirmationProofData};
+    /// use crate::utils::operation::Params as Op_Params;
+    ///
+    /// let proof_hex_encoded_data = "A48203AA308203A6308201230C0B626C6F636B486561646572A18201120482010EA582010A30820106A12204207A37DD331AC8FED64EEFCCA231B0F975DE7F4371CE5CA44105A5B117DF6DE251A1220420BAB0B26A302920A56F7FFB9428FA52A264657594624F12C73B1510BEB76EBCE1A12204209423052CE47270FB5ADE54B30F662AAB476BF26314680CD716C0EC1484EF5C63A308020601979ADDCE2EA306020400A926E1A0020500A48181307F30310C0B636F6E6669675F68617368A1220420C9A490594951ACBB668F05FE83287DB48CDD628811F9F5D3083BF087686C3BD4301A0C136D65726B6C655F686173685F76657273696F6EA303020102302E0C077072696D617279A123042102DD859FE30F3C6102B364A5FDEB3C8C3DA2B22F4E541015C3BEFDA753EC672E8E302A0C0468617368A1220420796D019516EB32366BAA60F08E73A78C94BBDCF9ED3724017AED6E9FC729AF923081830C0F6D65726B6C6550726F6F6654726565A570306EA303020167A303020101A3030201F6A530302EA303020165A303020100A1220420796D019516EB32366BAA60F08E73A78C94BBDCF9ED3724017AED6E9FC729AF92A52B3029A303020164A12204200000000000000000000000000000000000000000000000000000000000000000300E0C077478496E646578A303020100308201B90C077769746E657373A18201AC048201A800000004000000210202F6F59D4F007C52FB84FAF3B3E02CF7B8F9C2A4B953618047DBA2C85A17854F00000040D056BADD7014B638DB4FF06E2D86D570FF1FE712B00833FCA9D175BC926502A7613A7CDD1DA50326F9AEA3BBF94CD4043191E02CE5A4F0D81071B14CF841FD770000002102EF6254CCADB304E39244858F3E506EF58816A2769E019AD11C35842862D981F80000004062E6FD188816B85538A76990E2EE943CBDC40C161CA98A87B5B070FEDF7946CF73A6BEFB5C3F0DC3F664F52D8A53C8B79C52ADC023276F9836739FE0301BABA70000002103C146E1860AACC77EBF3B5741D04CFFBC316B37921D4029CAF2479AF5F2D573EA00000040EAD69772A61F5FA1B5C71A977D98F88B57702A6CA005D39BD72CC5064FE1B48F3C49B1CECDE24F8F6620CF2CB679314477BD96644E717C4B2F657DC7F7EEB6FB0000002102DD859FE30F3C6102B364A5FDEB3C8C3DA2B22F4E541015C3BEFDA753EC672E8E00000040D994B3945F0AF229FBC7FB3A480CA10357E8F58076BB0F375CCE6044FE36996F4755F9B5C7AA11894DBDE9AFA734E05B4501614692480820a28d52db04f577f7";
+    /// let result = Transaction::confirmation_proof(proof_hex_encoded_data);
+    ///
+    /// assert!(result.is_ok());
+    /// let proof_data = result.unwrap();
+    /// assert_eq!(proof_data.tx_index, 0);
+    /// // Further assertions can be made on other fields
+    /// ```
+    pub fn confirmation_proof(proof: &str) -> Result<TransactionConfirmationProofData, String> {
+        let hex_decode_data = hex::decode(proof).unwrap();
+        let result = gtv_decode(&hex_decode_data).unwrap();
+
+        if let Op_Params::Dict(ref confirmation_proof) = result {
+            let tx_confirmation_prood_data = TransactionConfirmationProofData {
+              block_header: confirmation_proof["blockHeader"].clone().into(),
+              hash: confirmation_proof["hash"].clone().into(),
+              tx_index: confirmation_proof["txIndex"].clone().into(),
+              witness: confirmation_proof["witness"].clone().into(),
+              merkle_proof_tree: confirmation_proof["merkleProofTree"].clone().into()
+            };
+            Ok(tx_confirmation_prood_data)
+        } else {
+            Err("Invalid proof data".to_string())
+        }
+    }
+
 }
 
 /// Signs a message digest using ECDSA with secp256k1.
@@ -324,4 +392,27 @@ fn get_public_keys(private_keys: &[&[u8; 32]]) -> Result<Vec<[u8; 33]>, secp256k
     }
 
     Ok(public_keys)
+}
+
+#[test]
+fn test_confirmation_proof() {
+    let proof_hex_encoded_data = "A48203AA308203A6308201230C0B626C6F636B486561646572A18201120482010EA582010A30820106A12204207A37DD331AC8FED64EEFCCA231B0F975DE7F4371CE5CA44105A5B117DF6DE251A1220420BAB0B26A302920A56F7FFB9428FA52A264657594624F12C73B1510BEB76EBCE1A12204209423052CE47270FB5ADE54B30F662AAB476BF26314680CD716C0EC1484EF5C63A308020601979ADDCE2EA306020400A926E1A0020500A48181307F30310C0B636F6E6669675F68617368A1220420C9A490594951ACBB668F05FE83287DB48CDD628811F9F5D3083BF087686C3BD4301A0C136D65726B6C655F686173685F76657273696F6EA303020102302E0C077072696D617279A123042102DD859FE30F3C6102B364A5FDEB3C8C3DA2B22F4E541015C3BEFDA753EC672E8E302A0C0468617368A1220420796D019516EB32366BAA60F08E73A78C94BBDCF9ED3724017AED6E9FC729AF923081830C0F6D65726B6C6550726F6F6654726565A570306EA303020167A303020101A3030201F6A530302EA303020165A303020100A1220420796D019516EB32366BAA60F08E73A78C94BBDCF9ED3724017AED6E9FC729AF92A52B3029A303020164A12204200000000000000000000000000000000000000000000000000000000000000000300E0C077478496E646578A303020100308201B90C077769746E657373A18201AC048201A800000004000000210202F6F59D4F007C52FB84FAF3B3E02CF7B8F9C2A4B953618047DBA2C85A17854F00000040D056BADD7014B638DB4FF06E2D86D570FF1FE712B00833FCA9D175BC926502A7613A7CDD1DA50326F9AEA3BBF94CD4043191E02CE5A4F0D81071B14CF841FD770000002102EF6254CCADB304E39244858F3E506EF58816A2769E019AD11C35842862D981F80000004062E6FD188816B85538A76990E2EE943CBDC40C161CA98A87B5B070FEDF7946CF73A6BEFB5C3F0DC3F664F52D8A53C8B79C52ADC023276F9836739FE0301BABA70000002103C146E1860AACC77EBF3B5741D04CFFBC316B37921D4029CAF2479AF5F2D573EA00000040EAD69772A61F5FA1B5C71A977D98F88B57702A6CA005D39BD72CC5064FE1B48F3C49B1CECDE24F8F6620CF2CB679314477BD96644E717C4B2F657DC7F7EEB6FB0000002102DD859FE30F3C6102B364A5FDEB3C8C3DA2B22F4E541015C3BEFDA753EC672E8E00000040D994B3945F0AF229FBC7FB3A480CA10357E8F58076BB0F375CCE6044FE36996F4755F9B5C7AA11894DBDE9AFA734E05B4501614692480820A28D52DB04F577F7";
+    let result = Transaction::confirmation_proof(proof_hex_encoded_data).unwrap();
+
+    assert_eq!(result.tx_index, 0);
+
+    let block_header_data = crate::utils::transaction::gtv::decode(&result.block_header).unwrap();
+
+    if let crate::utils::operation::Params::Array(bhd) = block_header_data {
+        assert_eq!(bhd[0].clone().to_hex_encode(), "7a37dd331ac8fed64eefcca231b0f975de7f4371ce5ca44105a5b117df6de251");
+        assert_eq!(bhd[1].clone().to_hex_encode(), "bab0b26a302920a56f7ffb9428fa52a264657594624f12c73b1510beb76ebce1");
+        assert_eq!(bhd[2].clone().to_hex_encode(), "9423052ce47270fb5ade54b30f662aab476bf26314680cd716c0ec1484ef5c63");
+        if let crate::utils::operation::Params::Integer(int_val) = bhd[3] {
+          assert_eq!(int_val, 1750649916974);
+        }
+    }
+
+    assert_eq!(hex::encode(result.hash), "796d019516eb32366baa60f08e73a78c94bbdcf9ed3724017aed6e9fc729af92");
+    assert_eq!(hex::encode(result.witness), "00000004000000210202f6f59d4f007c52fb84faf3b3e02cf7b8f9c2a4b953618047dba2c85a17854f00000040d056badd7014b638db4ff06e2d86d570ff1fe712b00833fca9d175bc926502a7613a7cdd1da50326f9aea3bbf94cd4043191e02ce5a4f0d81071b14cf841fd770000002102ef6254ccadb304e39244858f3e506ef58816a2769e019ad11c35842862d981f80000004062e6fd188816b85538a76990e2ee943cbdc40c161ca98a87b5b070fedf7946cf73a6befb5c3f0dc3f664f52d8a53c8b79c52adc023276f9836739fe0301baba70000002103c146e1860aacc77ebf3b5741d04cffbc316b37921d4029caf2479af5f2d573ea00000040ead69772a61f5fa1b5c71a977d98f88b57702a6ca005d39bd72cc5064fe1b48f3c49b1cecde24f8f6620cf2cb679314477bd96644e717c4b2f657dc7f7eeb6fb0000002102dd859fe30f3c6102b364a5fdeb3c8c3da2b22f4e541015c3befda753ec672e8e00000040d994b3945f0af229fbc7fb3a480ca10357e8f58076bb0f375cce6044fe36996f4755f9b5c7aa11894dbde9afa734e05b4501614692480820a28d52db04f577f7");
+
 }

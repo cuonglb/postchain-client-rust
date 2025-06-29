@@ -15,7 +15,7 @@ use url::Url;
 use serde_json::Value;
 use std::{error::Error, time::Duration};
 
-use crate::utils::transaction::{Transaction, TransactionStatus};
+use crate::utils::transaction::{Transaction, TransactionConfirmationProofData, TransactionStatus};
 
 /// A REST client for interacting with Postchain blockchain nodes.
 /// 
@@ -187,7 +187,7 @@ impl<'a> RestClient<'a> {
         let resp: Result<RestResponse, RestError> = self
             .postchain_rest_api(
                 RestRequestMethod::GET,
-                Some(&[&format!("/brid/iid_{}", blockchain_iid)]),
+                Some(&[&format!("/brid/iid_{blockchain_iid}")]),
                 None,
                 None,
                 None
@@ -219,11 +219,11 @@ impl<'a> RestClient<'a> {
         println!(">> Error(s)");
 
         if let Some(error_str) = &error.error_str {
-            println!("{}", error_str);
+            println!("{error_str}");
         } else {
             let val = &error.error_json.as_ref().unwrap();
             let pprint = serde_json::to_string_pretty(val).unwrap();
-            println!("{}", pprint);
+            println!("{pprint}");
         }
 
         if ignore_all_errors {
@@ -299,6 +299,85 @@ impl<'a> RestClient<'a> {
     /// * `Result<TransactionStatus, RestError>` - Transaction status or error
     pub async fn get_transaction_status(&self, blockchain_rid: &str, tx_rid: &str) -> Result<TransactionStatus, RestError> {
         self.get_transaction_status_with_poll(blockchain_rid, tx_rid, 0).await
+    }
+
+    /// Retrieves the confirmation proof for a given transaction.
+    ///
+    /// This function makes a GET request to the `/tx/{blockchain_rid}/{tx_rid}/confirmationProof`
+    /// endpoint of the Postchain node to fetch the cryptographic proof that a transaction
+    /// has been confirmed on the blockchain.
+    ///
+    /// # Arguments
+    /// * `blockchain_rid` - A string slice representing the Blockchain RID (Resource Identifier)
+    /// * `tx_rid` - A string slice representing the Transaction RID (Resource Identifier)
+    ///
+    /// # Returns
+    /// * `Result<TransactionConfirmationProofData, RestError>` - Returns `Ok(TransactionConfirmationProofData)`
+    ///   on successful retrieval and parsing of the proof, or `Err(RestError)` if the request fails,
+    ///   the response is not JSON, or the 'proof' field is missing/invalid.
+    ///
+    /// # Errors
+    /// This function can return a `RestError` in the following cases:
+    /// - If the underlying `postchain_rest_api` call fails (e.g., network issues, node unreachable).
+    /// - If the response from the node is not a JSON object.
+    /// - If the JSON response does not contain a "proof" field, or if the "proof" field is not a string.
+    /// - If the string value of the "proof" field cannot be successfully parsed into a `TransactionConfirmationProofData` struct.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use postchain_client::transport::RestClient;
+    /// # use postchain_client::utils::transaction::TransactionConfirmationProofData;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = RestClient::default();
+    /// let blockchain_rid = "your_blockchain_rid_hex_string"; // Replace with actual blockchain RID
+    /// let tx_rid = "your_transaction_rid_hex_string";     // Replace with actual transaction RID
+    ///
+    /// match client.get_confirmation_proof(blockchain_rid, tx_rid).await {
+    ///     Ok(proof_data) => {
+    ///         println!("Successfully retrieved confirmation proof:");
+    ///         println!("Block height: {}", proof_data.block_height);
+    ///         // Further processing of proof_data...
+    ///     },
+    ///     Err(e) => {
+    ///         eprintln!("Failed to get confirmation proof: {}", e);
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_confirmation_proof(&self, blockchain_rid: &str, tx_rid: &str) -> Result<TransactionConfirmationProofData, RestError> {
+        let resp = self.postchain_rest_api(
+            RestRequestMethod::GET,
+            Some(&["tx", blockchain_rid, tx_rid, "confirmationProof"]),
+            None,
+            None,
+            None
+        ).await?;
+
+        match resp {
+            RestResponse::Json(json_val) => {
+                match json_val.get("proof").and_then(|v| v.as_str()) {
+                    Some(proof) => {
+                        if let Ok(result) = Transaction::confirmation_proof(proof) {
+                            Ok(result)
+                        } else {
+                            Err(RestError {
+                                error_str: Some("Missing or invalid 'proof' field in response".to_string()),
+                                ..RestError::default()
+                            })
+                        }
+                    },
+                    None => Err(RestError {
+                        error_str: Some("Missing or invalid 'proof' field in response".to_string()),
+                        ..RestError::default()
+                    })
+                }
+            },
+            _ => Err(RestError {
+                error_str: Some("Expected JSON response with 'proof' field".to_string()),
+                ..RestError::default()
+            })
+        }
     }
 
     /// Gets the status of a transaction with polling for confirmation.
