@@ -26,10 +26,9 @@ pub struct Keypair {
     pub public_key: [u8; 33],
 }
 
-impl Keypair {
-    /// Returns a hex dump string of the public key
-    pub fn to_string(&self) -> String {
-        hex::encode(&self.public_key)
+impl std::fmt::Display for Keypair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self.public_key))
     }
 }
 
@@ -106,7 +105,7 @@ impl<'a> Ft4Client<'a> {
     /// # Returns
     /// 
     /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the transaction was successfully processed and confirmed,
-    ///                                            or an error if the transaction failed or is still waiting for confirmation
+    ///   or an error if the transaction failed or is still waiting for confirmation
     /// 
     /// # Errors
     /// 
@@ -116,7 +115,7 @@ impl<'a> Ft4Client<'a> {
     /// * Returns an error if there are issues with signing or sending the transaction
     async fn process_transaction(
         &self,
-        operations: Vec<Operation<'_>>,
+        operations: Vec<Operation>,
         signatures: Option<Vec<Vec<u8>>>,
         keypairs: &[&Keypair]
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -171,18 +170,18 @@ impl<'a> Ft4Client<'a> {
     /// # Arguments
     /// 
     /// * `keypairs` - A slice of references to Keypair objects that will be used to sign the transaction
-    ///                and authenticate the account. For single-signature accounts, provide a single keypair.
-    ///                For multi-signature accounts, provide multiple keypairs.
+    ///   and authenticate the account. For single-signature accounts, provide a single keypair.
+    ///   For multi-signature accounts, provide multiple keypairs.
     /// * `auth_permissions` - Optional vector of permission strings to grant to the account.
-    ///                       Defaults to ["A", "T"] which represents Account and Transfer permissions.
+    ///   Defaults to ["A", "T"] which represents Account and Transfer permissions.
     /// * `auth_multisig_required` - Optional number of signatures required for multi-signature accounts.
-    ///                             Defaults to 1 for single-signature accounts or the number of keypairs
-    ///                             for multi-signature accounts.
+    ///   Defaults to 1 for single-signature accounts or the number of keypairs
+    ///   for multi-signature accounts.
     /// 
     /// # Returns
     /// 
     /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the account was successfully registered,
-    ///                                            or an error if registration failed.
+    ///   or an error if registration failed.
     /// 
     /// # Examples
     /// 
@@ -237,7 +236,7 @@ impl<'a> Ft4Client<'a> {
         let auth_body = if auth_sigs.len() == 1 {
             Params::Array(vec![
                 Params::Array(auth_permission_params),
-                auth_sigs.get(0).unwrap().clone(),
+                auth_sigs.first().unwrap().clone(),
             ]) 
         } else {
             Params::Array(vec![
@@ -261,8 +260,8 @@ impl<'a> Ft4Client<'a> {
         let register_account_params = vec![];
         
         let operations = vec![
-            Operation::from_list("ft4.ras_open", ras_open_params),
-            Operation::from_list("ft4.register_account", register_account_params)
+            Operation::from_list("ft4.ras_open".to_string(), ras_open_params),
+            Operation::from_list("ft4.register_account".to_string(), register_account_params)
         ];
 
         self.process_transaction(operations, None, keypairs).await
@@ -293,16 +292,16 @@ impl<'a> Ft4Client<'a> {
     ///
     /// * `auth_descriptor` - The **current** `AuthDescriptor` of the account's main authentication descriptor.
     /// * `new_signer_public_keys` - A slice of references to the public keys ([u8; 33])
-    ///                              that will be the signers for the **new** main authentication descriptor.
+    ///   that will be the signers for the **new** main authentication descriptor.
     /// * `signatures_required` - The number of signatures required for the **new** multi-signature descriptor.
     /// * `signing_keypairs` - A slice of references to the Keypair objects that are
-    ///                        **currently** authorized to sign transactions for this account
-    ///                        and will be used to sign the update transaction.
+    ///   **currently** authorized to sign transactions for this account
+    ///   and will be used to sign the update transaction.
     ///
     /// # Returns
     ///
     /// * `Result<(), Box<dyn std::error::Error>>` - Ok(()) if the main authentication descriptor was
-    ///                                            successfully updated, or an error otherwise.
+    ///   successfully updated, or an error otherwise.
     pub async fn update_main_auth_descriptor(
         &self,
         auth_descriptor: &AuthDescriptor,
@@ -347,8 +346,8 @@ impl<'a> Ft4Client<'a> {
         ];
 
         let operations = vec![
-            Operation::from_list("ft4.ft_auth", ft_auth),
-            Operation::from_list("ft4.update_main_auth_descriptor", update_main_auth_descriptor_params)
+            Operation::from_list("ft4.ft_auth".to_string(), ft_auth),
+            Operation::from_list("ft4.update_main_auth_descriptor".to_string(), update_main_auth_descriptor_params)
         ];
 
         // Process the transaction, signing with the currently authorized keypairs
@@ -401,12 +400,12 @@ async fn test_ft4_register_account_single_signature() {
     // Test with default auth descriptor (A, T)
     let keypair1 = generate_keypair();
     let result = ft4_client.register_account(&[&keypair1], None, None).await;
-    assert_eq!(result.is_ok(), true, "Failed to register account with single signature");
+    assert!(result.is_ok(), "Failed to register account with single signature");
 
     // Test with custom auth descriptors (A, T, S)
     let keypair2 = generate_keypair();
     let result = ft4_client.register_account(&[&keypair2], Some(vec!["A", "T", "S"]), None).await;
-    assert_eq!(result.is_ok(), true, "Failed to register account with single signature");
+    assert!(result.is_ok(), "Failed to register account with single signature");
 }
 
 #[tokio::test]
@@ -420,7 +419,7 @@ async fn test_ft4_register_account_multi_signatures() {
     // Test with multiple keypairs and custom auth descriptors (A, T, S)
     // with multisig required = 3
     let result = ft4_client.register_account(&[&keypair1, &keypair2, &keypair3], Some(vec!["A", "T", "S"]), Some(3)).await;
-    assert_eq!(result.is_ok(), true, "Failed to register account with multi signatures");
+    assert!(result.is_ok(), "Failed to register account with multi signatures");
 }
 
 #[test]
@@ -437,7 +436,7 @@ async fn test_ft4_get_account_main_auth_descriptor() {
     let account_id = Ft4Client::get_account_id(&keypair.public_key).unwrap();
 
     let result = ft4_client.register_account(&[&keypair], None, None).await;
-    assert_eq!(result.is_ok(), true, "Failed to register account with single signature");
+    assert!(result.is_ok(), "Failed to register account with single signature");
 
     let result = ft4_client.get_account_main_auth_descriptor(&account_id).await;
     assert!(result.is_ok(), "Failed to get account main auth descriptor");
@@ -456,7 +455,7 @@ async fn test_ft4_update_main_auth_descriptor() {
     let account_id = Ft4Client::get_account_id(&keypair.public_key).unwrap();   
 
     let result = ft4_client.register_account(&[&keypair], None, None).await;
-    assert_eq!(result.is_ok(), true, "Failed to register account with single signature");
+    assert!(result.is_ok(), "Failed to register account with single signature");
 
     let auth_descriptor = ft4_client.get_account_main_auth_descriptor(&account_id).await;
     assert!(auth_descriptor.is_ok(), "Failed to get account main auth descriptor");

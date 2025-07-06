@@ -14,12 +14,10 @@ where
         serde_json::Value::String(s) => {
             if s.chars().all(|c| c.is_ascii_hexdigit() || c.is_ascii_uppercase()) {
                 Ok(s)
+            } else if let Ok(bytes) = BASE64.decode(&s) {
+                Ok(hex::encode(&bytes).to_uppercase())
             } else {
-                if let Ok(bytes) = BASE64.decode(&s) {
-                    Ok(hex::encode(&bytes).to_uppercase())
-                } else {
-                    Err(Error::custom("Invalid hex or base64 string"))
-                }
+                Err(Error::custom("Invalid hex or base64 string"))
             }
         },
         _ => Err(Error::custom("Expected a string")),
@@ -33,14 +31,12 @@ where
     let v: Vec<serde_json::Value> = Vec::deserialize(deserializer)?;
     let mut result = Vec::new();
 
-    if v.len() >= 1 {
-        if let Some(permissions_value) = v.get(0) {
+    if !v.is_empty() {
+        if let Some(permissions_value) = v.first() {
             if let Ok(permissions) = serde_json::from_value::<Vec<String>>(permissions_value.clone()) {
                 result.extend(permissions);
-            } else {
-                if let Some(s) = permissions_value.as_str() {
-                    result.push(s.to_string());
-                }
+            } else if let Some(s) = permissions_value.as_str() {
+                result.push(s.to_string());
             }
         }
     }
