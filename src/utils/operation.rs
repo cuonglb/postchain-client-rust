@@ -201,13 +201,13 @@ where
 /// or a list of unnamed parameters, along with an operation name.
 #[derive(Clone, Debug, PartialEq)]
 #[derive(Default)]
-pub struct Operation<'a> {
+pub struct Operation {
     /// Dictionary of named parameters
     /// List of unnamed parameters
     /// Name of the operation
-    pub dict: Option<Vec<(&'a str, Params)>>,
+    pub dict: Option<Vec<(String, Params)>>,
     pub list: Option<Vec<Params>>,
-    pub operation_name: Option<&'a str>,
+    pub operation_name: Option<String>,
 }
 
 
@@ -228,7 +228,28 @@ fn is_vec_u8(value: &[serde_json::Value]) -> bool {
         })    
 }
 
-impl<'a> Operation<'a> {
+impl std::fmt::Display for Params {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Params::Text(text) => write!(f, "{text}"),
+            Params::Integer(i) => write!(f, "Integer({i})"),
+            Params::ByteArray(bytes) => write!(f, "ByteArray({bytes:?})"),
+            Params::BigInteger(bi) => write!(f, "BigInteger({bi})"),
+            Params::Array(arr) => write!(f, "Array({arr:?})"),
+            Params::Null => write!(f, "Null"),
+            Params::Boolean(b) => write!(f, "Boolean({b})"),
+            Params::Decimal(bd) => write!(f, "Decimal({bd})"),
+            Params::Dict(dict) => {
+                let dict_str: Vec<String> = dict.iter()
+                    .map(|(k, v)| format!("{k}: {v}"))
+                    .collect();
+                write!(f, "Dict({})", dict_str.join(", "))
+            }
+        }
+    }
+}
+
+impl Operation {
     /// Creates a new Operation from a dictionary of parameters.
     /// 
     /// # Arguments
@@ -237,7 +258,7 @@ impl<'a> Operation<'a> {
     /// 
     /// # Returns
     /// A new Operation instance with dictionary parameters
-    pub fn from_dict(operation_name: &'a str, params: Vec<(&'a str, Params)>) -> Self {
+    pub fn from_dict(operation_name: String, params: Vec<(String, Params)>) -> Self {
         Self {
             dict: Some(params),
             operation_name: Some(operation_name),
@@ -253,7 +274,7 @@ impl<'a> Operation<'a> {
     /// 
     /// # Returns
     /// A new Operation instance with list parameters
-    pub fn from_list(operation_name: &'a str, params: Vec<Params>) -> Self {
+    pub fn from_list(operation_name: String, params: Vec<Params>) -> Self {
         Self {
             list: Some(params),
             operation_name: Some(operation_name),
@@ -380,6 +401,20 @@ impl Params {
             _ => panic!("Expected Params::ByteArray, found {self:?}"),
         }
     }
+
+    pub fn to_vec(self) -> Vec<u8> {
+        match self {
+            Params::ByteArray(bytearray) => bytearray,
+            _ => panic!("Expected Params::ByteArray, found {self:?}"),
+        }
+    }
+
+    // pub fn to_string(self) -> String {
+    //     match self {
+    //         Params::Text(text) => text,
+    //         _ => panic!("Expected Params::Text, found {self:?}"),
+    //     }
+    // }
 
     /// Converts a dictionary parameter to a Rust struct.
     /// 

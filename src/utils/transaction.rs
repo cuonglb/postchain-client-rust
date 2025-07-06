@@ -72,11 +72,11 @@ pub enum TransactionStatus {
 /// the necessary signatures to authorize these operations. It supports
 /// both single and multi-signature scenarios.
 #[derive(Debug)]
-pub struct Transaction<'a> {
+pub struct Transaction {
     /// Unique identifier of the blockchain this transaction belongs to
     pub blockchain_rid: Vec<u8>,
     /// List of operations to be executed in this transaction
-    pub operations: Option<Vec<Operation<'a>>>,
+    pub operations: Option<Vec<Operation>>,
     /// List of public keys of the signers
     pub signers: Option<Vec<Vec<u8>>>,
     /// List of signatures corresponding to the signers
@@ -114,7 +114,7 @@ macro_rules! extract_field {
     };
 }
 
-impl<'a> Default for Transaction<'a> {
+impl Default for Transaction {
     /// Creates a new Transaction with default values and performs automatic initialization.
     /// 
     /// # Example
@@ -145,7 +145,7 @@ pub struct TransactionConfirmationProofData {
   pub merkle_proof_tree: Vec<crate::utils::operation::Params>
 }
 
-impl<'a> Transaction<'a> {
+impl Transaction {
     /// Creates a new transaction with the specified parameters.
     ///
     /// # Arguments
@@ -157,7 +157,7 @@ impl<'a> Transaction<'a> {
     /// # Returns
     /// A new Transaction instance
     pub fn new(blockchain_rid: Vec<u8>,
-        operations: Option<Vec<Operation<'a>>>,
+        operations: Option<Vec<Operation>>,
         signers: Option<Vec<Vec<u8>>>,
         signatures: Option<Vec<Vec<u8>>>) -> Self {
         Self {
@@ -371,6 +371,135 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Creates a new `Transaction` (or `Self`) instance from a raw hexadecimal string.
+    ///
+    /// This function is responsible for decoding a hexadecimal string representing transaction
+    /// data into a structured format, likely using a custom Generalized Transaction Value (GTV)
+    /// encoding scheme. It extracts key components such as the blockchain's Root ID (RID),
+    /// operations, signers, and signatures from the decoded data.
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - A string slice (`&str`) containing the raw transaction data encoded in hexadecimal format.
+    ///
+    /// # Returns
+    ///
+    /// A `Result<Self, String>` which is:
+    /// - `Ok(Self)`: If the hexadecimal string is successfully decoded and parsed into a valid
+    ///   `Transaction` (or `Self`) instance.
+    /// - `Err(String)`: If any error occurs during the process, such as:
+    ///   - The input `tx` string is not valid hexadecimal.
+    ///   - The decoded data fails to conform to the expected GTV structure.
+    ///   - Specific components (like `block_chain_rid`, `operations`, `signers`, or `signatures`)
+    ///     are missing or are of an unexpected type within the GTV structure.
+    ///
+    /// # Errors
+    ///
+    /// This function can return an error string in the following scenarios:
+    /// - "Invalid hex": If `hex::decode` fails to parse the input `tx` string.
+    /// - "GTV decode failed": If `gtv_decode` encounters an error during the GTV deserialization process.
+    /// - Panics with "Unexpected signer type": (This is a current panic, ideally this would be
+    ///   converted to a `Result::Err` for robust error handling in a production system).
+    ///   This occurs if an element within the expected signers array is not a `ByteArray`.
+    /// - Other potential errors related to unexpected data structures within the GTV `result`
+    ///   (e.g., if `val2[0]` or `val2[2]` are not arrays as expected).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// // Assuming `Transaction` is the type `Self` refers to, and `gtv_decode` and `hex` are available.
+    /// // Also assuming a valid hex string for a transaction.
+    ///
+    /// // Example of a successful decode (conceptual, as actual hex depends on your GTV structure)
+    /// let valid_hex_tx = "010203..."; // Replace with a real valid hex transaction string
+    /// match Transaction::from_raw_data(valid_hex_tx) {
+    ///     Ok(transaction) => {
+    ///         println!("Successfully decoded transaction: {:?}", transaction);
+    ///         // Further assertions or usage of the transaction object
+    ///     },
+    ///     Err(e) => {
+    ///         eprintln!("Failed to decode transaction: {}", e);
+    ///     }
+    /// }
+    ///
+    /// // Example of an invalid hex string
+    /// let invalid_hex_tx = "not_a_hex_string";
+    /// if let Err(e) = Transaction::from_raw_data(invalid_hex_tx) {
+    ///     assert_eq!(e, "Invalid hex");
+    /// }
+    ///
+    /// // Example of a hex string that decodes but has invalid GTV structure
+    /// let malformed_gtv_hex = "0a0b0c..."; // Replace with a hex string that causes GTV decode or structural errors
+    /// if let Err(e) = Transaction::from_raw_data(malformed_gtv_hex) {
+    ///     assert!(e.contains("GTV decode failed") || e.contains("Unexpected"));
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function currently panics if an element within the expected signers array is not
+    /// of the `OpParams::ByteArray` type. For production-grade code, this panic should
+    /// ideally be converted into a `Result::Err` for more graceful error handling.
+    ///
+    /// # Implementation Details
+    ///
+    /// 1. Decodes the input hexadecimal string `tx` into a byte vector.
+    /// 2. Deserializes the byte vector into a `Params` object using `gtv_decode`.
+    /// 3. Extracts the `block_chain_rid` from the first element of the main GTV array.
+    /// 4. Iterates through the third element of the main GTV array to parse `signers`,
+    ///    expecting each signer to be a `ByteArray`.
+    /// 5. (Further logic for `operations` and `signatures` would be described here if visible).
+    ///
+    /// This function relies on the `hex` crate for hexadecimal decoding and a custom
+    /// `gtv_decode` function for Generalized Transaction Value (GTV) deserialization.
+    /// The `OpParams` enum is crucial for interpreting the structure of the decoded GTV data.
+    pub fn from_raw_data(tx: &str) -> Result<Self, String> {
+        let hex_decode_data = hex::decode(tx).map_err(|_| "Invalid hex".to_string())?;
+        let result = gtv_decode(&hex_decode_data).map_err(|_| "GTV decode failed".to_string())?;
+
+        let mut blockchain_rid = vec![];
+        let mut operations: Vec<Operation> = vec![];
+        let mut signers: Option<Vec<Vec<u8>>> = None;
+        let mut signatures: Option<Vec<Vec<u8>>> = None;
+
+        if let Op_Params::Array(val) = result {
+            if let Op_Params::Array(val2) = &val[0] {
+                // Blockchain RID
+                blockchain_rid = val2[0].clone().to_vec();
+
+                // Signers
+                if let Op_Params::Array(val3) = &val2[2] {
+                    if !val3.is_empty() {
+                        signers = Some(val3.iter().map(|signer| signer.clone().to_vec()).collect());
+                    }
+                }
+
+                // Operations
+                if let Op_Params::Array(val3) = &val2[1]{
+                    for operation in val3 {
+                        if let Op_Params::Array(ops) = operation {
+                            operations.push(Operation::from_list(ops[0].clone().to_string(), ops[1].clone().into()));
+                        }
+                    }
+                }
+            }
+
+            // Signatures
+            if let Op_Params::Array(val2) = &val[1] {
+                if !val2.is_empty() {
+                    signatures = Some(val2.iter().map(|signature| signature.clone().to_vec()).collect())
+                }
+            }
+        }
+
+        Ok(Self {
+            blockchain_rid,
+            operations: Some(operations),
+            signers,
+            signatures,
+            ..Default::default()
+        })
+    }
 }
 
 /// Signs a message digest using ECDSA with secp256k1.
@@ -452,4 +581,70 @@ fn test_confirmation_proof() {
     assert_eq!(hex::encode(result.hash), "796d019516eb32366baa60f08e73a78c94bbdcf9ed3724017aed6e9fc729af92");
     assert_eq!(hex::encode(result.witness), "00000004000000210202f6f59d4f007c52fb84faf3b3e02cf7b8f9c2a4b953618047dba2c85a17854f00000040d056badd7014b638db4ff06e2d86d570ff1fe712b00833fca9d175bc926502a7613a7cdd1da50326f9aea3bbf94cd4043191e02ce5a4f0d81071b14cf841fd770000002102ef6254ccadb304e39244858f3e506ef58816a2769e019ad11c35842862d981f80000004062e6fd188816b85538a76990e2ee943cbdc40c161ca98a87b5b070fedf7946cf73a6befb5c3f0dc3f664f52d8a53c8b79c52adc023276f9836739fe0301baba70000002103c146e1860aacc77ebf3b5741d04cffbc316b37921d4029caf2479af5f2d573ea00000040ead69772a61f5fa1b5c71a977d98f88b57702a6ca005d39bd72cc5064fe1b48f3c49b1cecde24f8f6620cf2cb679314477bd96644e717c4b2f657dc7f7eeb6fb0000002102dd859fe30f3c6102b364a5fdeb3c8c3da2b22f4e541015c3befda753ec672e8e00000040d994b3945f0af229fbc7fb3a480ca10357e8f58076bb0f375cce6044fe36996f4755f9b5c7aa11894dbde9afa734e05b4501614692480820a28d52db04f577f7");
 
+}
+
+#[tokio::test]
+async fn get_raw_transaction_data() {
+    use crate::utils::operation::Params;
+    use crate::transport::client::RestClient;
+    use bigdecimal::FromPrimitive;
+
+    let rc = RestClient{
+        node_url: vec!["https://system.chromaway.com"],
+        ..Default::default()
+    };
+
+    let blockchain_rid = "15C0CA99BEE60A3B23829968771C50E491BD00D2E3AE448580CD48A8D71E7BBA";
+    let tx_rid = "B5AE42A1645992D74E955A17D90F275778A19ADD3EB68A90EB0DD7225641A43A";
+
+    let result = rc.get_raw_transaction_data(blockchain_rid, tx_rid).await.unwrap();
+
+    let ft4_evm_auth_ids = [
+        "62a123cf432ec739d229d804b78a7c30d39ae29101247b1e4bfd1b20cc54cc43", // account_id
+        "cc01ed41ea21a8f516742ebbf0a3a9927c5de8816ed2f289f03e6f1db8a4e8bd" // auth_descriptor_id
+        ];
+
+    let ft4_evm_auth_signatures = vec![
+        Params::Array(vec![
+            Params::ByteArray(hex::decode("d98116e2cb881ce13f0b70255549ca29420ef478af888db25a8b957d802af71d").unwrap()),
+            Params::ByteArray(hex::decode("722750f833f40eccc701697835891f80fa90c1749b4eaaa059ec9c7a5017f977").unwrap()),
+            Params::Integer(27)
+        ])
+    ];
+
+    let nop = vec![
+        Params::ByteArray(hex::decode("93C0AC18E20D1BACF3189E5BDE2F4B0F1367FC4CDFC2A3EB7168E17073EAE584").unwrap())
+    ];
+
+    let eif_hbridge_bridge_ft4_token_to_evm = vec![
+        Params::Integer(1), // network_id
+        Params::ByteArray(hex::decode("5f16d1545a0881f971b164f1601cbbf51c29efd0633b2730da18c403c3b428b5").unwrap()), // asset_id
+        Params::BigInteger(num_bigint::BigInt::from_i128(63080704247).unwrap()), // amount
+        Params::ByteArray(hex::decode("d1941a115536b619c4f528432237d35f79544cfe").unwrap()), // beneficiary
+    ];
+
+    if let Some(operations) = result.operations {
+        for op in operations {
+            if let Some("ft4.evm_auth") = op.operation_name.as_deref() {
+                if let Some(ref val) = op.list {
+                    for item in val {
+                        if let Params::ByteArray(val2) = item {
+                            assert!(ft4_evm_auth_ids.contains(&hex::encode(val2).as_str()));
+                        }
+                        if let Params::Array(val2) = item {
+                            assert_eq!(val2, &ft4_evm_auth_signatures);
+                        }
+                    }
+                }
+            }
+            if let Some("eif.hbridge.bridge_ft4_token_to_evm") = op.operation_name.as_deref() {
+                if let Some(ref val) = op.list {
+                    assert_eq!(val, &eif_hbridge_bridge_ft4_token_to_evm);
+                }
+            }
+            if let Some("nop") = op.operation_name.as_deref() {
+                assert_eq!(op.list, Some(nop.clone()));
+            }
+        }
+    }
 }

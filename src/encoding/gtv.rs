@@ -129,7 +129,7 @@ impl GTVParams for Params {
 /// # Returns
 /// 
 /// * `Vec<u8>` - Encoded transaction as a byte vector
-pub fn encode_tx<'a>(tx: &Transaction<'a>) -> Vec<u8> {
+pub fn encode_tx(tx: &Transaction) -> Vec<u8> {
   asn1::write(|writer| {
     write_explicit_element(writer,
       &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
@@ -229,7 +229,7 @@ pub fn encode(
 /// # Returns
 /// 
 /// * `asn1::WriteResult` - Result of the write operation
-fn encode_tx_body<'a>(writer: &mut asn1::Writer, operation: &Operation<'a>) -> asn1::WriteResult {
+fn encode_tx_body(writer: &mut asn1::Writer, operation: &Operation) -> asn1::WriteResult {
   write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
     // Operation name
     write_explicit_element(writer,&asn1::Utf8String::new(operation.operation_name.as_ref().unwrap()), 2)?;
@@ -479,7 +479,7 @@ pub fn encode_value_hex_encode(value: &Params) -> String {
 /// # Returns
 /// 
 /// * `Params` - GTV representation of the transaction
-pub fn to_draw_gtx<'a>(tx: &'a Transaction<'a>) -> Params {
+pub fn to_draw_gtx(tx: &Transaction) -> Params {
   let mut signers: Vec<Params> = vec![];
   let mut operations:Vec<Params> = vec![];
 
@@ -503,7 +503,7 @@ pub fn to_draw_gtx<'a>(tx: &'a Transaction<'a>) -> Params {
     }
 
     operations.push(Params::Array(vec![
-      Params::Text(op.operation_name.unwrap().to_string()),
+      Params::Text(op.operation_name.clone().unwrap()),
       Params::Array(op_args)
     ]));
   }

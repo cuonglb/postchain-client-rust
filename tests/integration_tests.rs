@@ -45,7 +45,7 @@ async fn assert_roundtrips(
 
 async fn assert_roundtrips_transaction<'a>(
     rc: &RestClient<'_>,
-    tx: &Transaction<'_>,
+    tx: &Transaction,
     operation_name: &'a str,
     brid: &'a str,
 ) {
@@ -164,8 +164,8 @@ async fn signed_transaction_integration_test() {
     let operation_name = "setBoolean";
     let params = vec![Params::Boolean(false)];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
 
     let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
@@ -203,7 +203,7 @@ async fn signed_transaction_with_nested_arguments_integration_test() {
     let operation_name = "nestedArguments";
 
     let ops = vec![
-        Operation::from_list(operation_name, vec![
+        Operation::from_list(operation_name.to_string(), vec![
             Params::Array(vec![
                 Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())]),
                 Params::Array(vec![Params::Text("foo".to_string())]),
@@ -241,8 +241,8 @@ async fn unsigned_transactions_integration_test() {
     let operation_name = "setBoolean";
     let params = vec![Params::Boolean(true)];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -259,8 +259,8 @@ async fn unsigned_transactions_integration_test() {
         Params::Text("bar".to_string()),
         ];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -272,13 +272,13 @@ async fn unsigned_transactions_integration_test() {
 
     let operation_name = "setEntityViaStruct";
     let params = vec![
-        ("int", Params::Integer(1)),
-        ("string1", Params::Text("foo".to_string())),
-        ("string2", Params::Text("bar".to_string())),
+        ("int".to_string(), Params::Integer(1)),
+        ("string1".to_string(), Params::Text("foo".to_string())),
+        ("string2".to_string(), Params::Text("bar".to_string())),
         ];
     let ops = vec![
-        Operation::from_dict(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_dict(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -290,12 +290,12 @@ async fn unsigned_transactions_integration_test() {
 
     let operation_name = "nestedArguments";
     let params = vec![
-    ("multiStruct", Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())])),
-    ("arrayExample", Params::Array(vec![Params::Text("foo".to_string())])),
+    ("multiStruct".to_string(), Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())])),
+    ("arrayExample".to_string(), Params::Array(vec![Params::Text("foo".to_string())])),
     ];
     let ops = vec![
-        Operation::from_dict(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_dict(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
