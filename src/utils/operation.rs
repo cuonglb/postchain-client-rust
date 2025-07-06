@@ -201,13 +201,13 @@ where
 /// or a list of unnamed parameters, along with an operation name.
 #[derive(Clone, Debug, PartialEq)]
 #[derive(Default)]
-pub struct Operation<'a> {
+pub struct Operation {
     /// Dictionary of named parameters
     /// List of unnamed parameters
     /// Name of the operation
-    pub dict: Option<Vec<(&'a str, Params)>>,
+    pub dict: Option<Vec<(String, Params)>>,
     pub list: Option<Vec<Params>>,
-    pub operation_name: Option<&'a str>,
+    pub operation_name: Option<String>,
 }
 
 
@@ -228,7 +228,28 @@ fn is_vec_u8(value: &[serde_json::Value]) -> bool {
         })    
 }
 
-impl<'a> Operation<'a> {
+impl std::fmt::Display for Params {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Params::Text(text) => write!(f, "{text}"),
+            Params::Integer(i) => write!(f, "Integer({i})"),
+            Params::ByteArray(bytes) => write!(f, "ByteArray({bytes:?})"),
+            Params::BigInteger(bi) => write!(f, "BigInteger({bi})"),
+            Params::Array(arr) => write!(f, "Array({arr:?})"),
+            Params::Null => write!(f, "Null"),
+            Params::Boolean(b) => write!(f, "Boolean({b})"),
+            Params::Decimal(bd) => write!(f, "Decimal({bd})"),
+            Params::Dict(dict) => {
+                let dict_str: Vec<String> = dict.iter()
+                    .map(|(k, v)| format!("{k}: {v}"))
+                    .collect();
+                write!(f, "Dict({})", dict_str.join(", "))
+            }
+        }
+    }
+}
+
+impl Operation {
     /// Creates a new Operation from a dictionary of parameters.
     /// 
     /// # Arguments
@@ -237,7 +258,7 @@ impl<'a> Operation<'a> {
     /// 
     /// # Returns
     /// A new Operation instance with dictionary parameters
-    pub fn from_dict(operation_name: &'a str, params: Vec<(&'a str, Params)>) -> Self {
+    pub fn from_dict(operation_name: String, params: Vec<(String, Params)>) -> Self {
         Self {
             dict: Some(params),
             operation_name: Some(operation_name),
@@ -253,7 +274,7 @@ impl<'a> Operation<'a> {
     /// 
     /// # Returns
     /// A new Operation instance with list parameters
-    pub fn from_list(operation_name: &'a str, params: Vec<Params>) -> Self {
+    pub fn from_list(operation_name: String, params: Vec<Params>) -> Self {
         Self {
             list: Some(params),
             operation_name: Some(operation_name),
@@ -303,7 +324,7 @@ impl Params {
                 }
                 array_data
             },
-            _ => panic!("Expected Params::Dict, found {:?}", self),
+            _ => panic!("Expected Params::Dict, found {self:?}"),
         }
     }
 
@@ -332,7 +353,7 @@ impl Params {
                 let values: Vec<Params> = dict.into_values().collect();
                 values
             },
-            _ => panic!("Expected Params::Dict, found {:?}", self),
+            _ => panic!("Expected Params::Dict, found {self:?}"),
         }
     }
 
@@ -351,7 +372,7 @@ impl Params {
             Params::Dict(dict) => dict.is_empty(),
             Params::ByteArray(bytearray) => bytearray.is_empty(),
             Params::Text(text) => text.is_empty(),
-            _ => panic!("Cannot check empty of this type {:?}", self)
+            _ => panic!("Cannot check empty of this type {self:?}")
         }
     }
 
@@ -370,9 +391,30 @@ impl Params {
             Params::Dict(dict) => dict.len(),
             Params::ByteArray(bytearray) => bytearray.len(),
             Params::Text(text) => text.len(),
-            _ => panic!("Cannot get length of this type {:?}", self)
+            _ => panic!("Cannot get length of this type {self:?}")
         }
     }
+
+    pub fn to_hex_encode(self) -> String {
+        match self {
+            Params::ByteArray(bytearray) => hex::encode(bytearray),
+            _ => panic!("Expected Params::ByteArray, found {self:?}"),
+        }
+    }
+
+    pub fn to_vec(self) -> Vec<u8> {
+        match self {
+            Params::ByteArray(bytearray) => bytearray,
+            _ => panic!("Expected Params::ByteArray, found {self:?}"),
+        }
+    }
+
+    // pub fn to_string(self) -> String {
+    //     match self {
+    //         Params::Text(text) => text,
+    //         _ => panic!("Expected Params::Text, found {self:?}"),
+    //     }
+    // }
 
     /// Converts a dictionary parameter to a Rust struct.
     /// 
@@ -402,9 +444,9 @@ impl Params {
                 let json_value = self.to_json_value();
                 
                 serde_json::from_value(json_value)
-                    .map_err(|e| format!("Failed to convert Params to struct: {}", e))
+                    .map_err(|e| format!("Failed to convert Params to struct: {e}"))
             },
-            _ => Err(format!("Expected Params::Dict, found {:?}", self)),
+            _ => Err(format!("Expected Params::Dict, found {self:?}")),
         }
     }
 
@@ -656,7 +698,7 @@ impl Params {
                 eprintln!("{:?}", hex::encode(val));
             }
             _ =>
-                eprintln!("{:?}", self)
+                eprintln!("{self:?}")
         }
     }
 }
@@ -669,7 +711,7 @@ impl From<Params> for bool {
     fn from(value: Params) -> Self {
         match value {
             Params::Boolean(val) => val,
-            _ => panic!("Cannot convert {:?} to bool", value)
+            _ => panic!("Cannot convert {value:?} to bool")
         }
     }
 }
@@ -682,7 +724,7 @@ impl From<Params> for i64 {
     fn from(value: Params) -> Self {
         match value {
             Params::Integer(val) => val,
-            _ => panic!("Cannot convert {:?} to i64", value)
+            _ => panic!("Cannot convert {value:?} to i64")
         }
     }
 }
@@ -695,7 +737,7 @@ impl From<Params> for BigInt {
     fn from(value: Params) -> Self {
         match value {
             Params::BigInteger(val) => val,
-            _ => panic!("Cannot convert {:?} to BigInt", value)
+            _ => panic!("Cannot convert {value:?} to BigInt")
         }
     }
 }
@@ -708,7 +750,7 @@ impl From<Params> for BigDecimal {
     fn from(value: Params) -> Self {
         match value {
             Params::Decimal(val) => val,
-            _ => panic!("Cannot convert {:?} to BigDecimal", value)
+            _ => panic!("Cannot convert {value:?} to BigDecimal")
         }
     }
 }
@@ -721,7 +763,7 @@ impl From<Params> for String {
     fn from(value: Params) -> Self {
         match value {
             Params::Text(val) => val,
-            _ => panic!("Cannot convert {:?} to String", value)
+            _ => panic!("Cannot convert {value:?} to String")
         }
     }
 }
@@ -734,7 +776,7 @@ impl From<Params> for Vec<u8> {
     fn from(value: Params) -> Self {
         match value {
             Params::ByteArray(val) => val,
-            _ => panic!("Cannot convert {:?} to Vec<u8>", value)
+            _ => panic!("Cannot convert {value:?} to Vec<u8>")
         }
     }
 }
@@ -750,7 +792,7 @@ impl From<Params> for Vec<Params> {
     fn from(val: Params) -> Self {
         match val {
             Params::Array(array) => array,
-            _ => panic!("Cannot convert {:?} into Vec<Params>", val),
+            _ => panic!("Cannot convert {val:?} into Vec<Params>"),
         }
     }
 }
@@ -766,7 +808,7 @@ impl From<Params> for BTreeMap<String, Params> {
     fn from(val: Params) -> Self {
         match val {
             Params::Dict(dict) => dict,
-            _ => panic!("Cannot convert {:?} into BTreeMap", val),
+            _ => panic!("Cannot convert {val:?} into BTreeMap"),
         }
     }
 }
@@ -811,7 +853,7 @@ fn test_deserialize_param_dict_to_struct() {
     /// We have two options here for deserialization big integer:
     /// 1. Use `String` struct
     /// 2. Use `num_bigint::BigInt` struct with serder custom function
-    /// name `deserialize_bigint`
+    ///    name `deserialize_bigint`
     #[derive(Debug, Default, serde::Deserialize, PartialEq)]
     struct TestNestedStruct {
         bigint_as_string: String,

@@ -18,16 +18,16 @@ fn initialize_test_envs() {
 const POSTCHAIN_SINGLE_NODE_API_URL: &str = "http://localhost:7740";
 const POSTCHAIN_MULTI_NODE_API_URL: &str = "https://node0.devnet1.chromia.dev:7740";
 
-async fn assert_roundtrips<'a>(
+async fn assert_roundtrips(
     rc: &RestClient<'_>,
     brid: &str,
     query_type: &str,
-    query_args: Option<&'a mut Vec<(&str, Params)>>,
+    query_args: Option<&mut Vec<(&str, Params)>>,
     expected_value: &str,
 ) {
     let do_query = rc.query(brid, None, query_type, None, query_args).await;
 
-    print!("test query = {} ... ", query_type);
+    print!("test query = {query_type} ... ");
 
     match do_query {
         Ok(val) => {
@@ -45,13 +45,13 @@ async fn assert_roundtrips<'a>(
 
 async fn assert_roundtrips_transaction<'a>(
     rc: &RestClient<'_>,
-    tx: &Transaction<'_>,
+    tx: &Transaction,
     operation_name: &'a str,
     brid: &'a str,
 ) {
     let send_transaction = rc.send_transaction(tx).await;
 
-    print!("test transaction with operation_name = {} ... ", operation_name);
+    print!("test transaction with operation_name = {operation_name} ... ");
 
     match send_transaction {
         Ok(_) => {
@@ -59,11 +59,21 @@ async fn assert_roundtrips_transaction<'a>(
             let rid_hex = tx.tx_rid_hex();
             
             if let Err(error) = rid_hex {
-                panic!("{:?}", error);
+                panic!("{error:?}");
             }
 
-            let tx_status = rc.get_transaction_status(brid, &rid_hex.unwrap()).await;
-            println!("{:?}", tx_status);
+            let rid_hex_unwrap = rid_hex.unwrap();
+
+            let tx_status = rc.get_transaction_status(brid, &rid_hex_unwrap).await;
+            println!("{tx_status:?}");
+
+            let tx_confirmation_proof = rc.get_confirmation_proof(brid, &rid_hex_unwrap).await;
+
+            if let Err(error) = tx_confirmation_proof {
+                eprintln!("Error getting confirmation proof: {error:?}");
+                return;
+            }
+            println!("tx_confirmation_proof {tx_confirmation_proof:?}");
         }
         Err(error) => {
             if rc.print_error(&error, true) {
@@ -135,7 +145,7 @@ fn read_private_key_from_env_var() -> [u8; 32] {
             array
         }
         Err(e) => {
-            panic!("Couldn't read PRIV_KEY: {}", e)
+            panic!("Couldn't read PRIV_KEY: {e}")
         }
     }
 }
@@ -154,8 +164,8 @@ async fn signed_transaction_integration_test() {
     let operation_name = "setBoolean";
     let params = vec![Params::Boolean(false)];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
 
     let merkle_hash_version = rc.detect_merkle_hash_version(&brid).await;
@@ -172,7 +182,7 @@ async fn signed_transaction_integration_test() {
     let result = tx.sign(&private_key_from_env);
 
     if let Err(error) = result {
-        eprint!("TX sign error {:?}", error);
+        eprint!("TX sign error {error:?}");
     } else {
         assert_roundtrips_transaction(&rc, &tx, operation_name, &brid).await;
     }
@@ -193,7 +203,7 @@ async fn signed_transaction_with_nested_arguments_integration_test() {
     let operation_name = "nestedArguments";
 
     let ops = vec![
-        Operation::from_list(operation_name, vec![
+        Operation::from_list(operation_name.to_string(), vec![
             Params::Array(vec![
                 Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())]),
                 Params::Array(vec![Params::Text("foo".to_string())]),
@@ -210,7 +220,7 @@ async fn signed_transaction_with_nested_arguments_integration_test() {
     let result = tx.sign(&private_key_from_env);
 
     if let Err(error) = result {
-        eprint!("TX sign error {:?}", error);
+        eprint!("TX sign error {error:?}");
     } else {
         assert_roundtrips_transaction(&rc, &tx, operation_name, &brid).await;
     }
@@ -231,8 +241,8 @@ async fn unsigned_transactions_integration_test() {
     let operation_name = "setBoolean";
     let params = vec![Params::Boolean(true)];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -249,8 +259,8 @@ async fn unsigned_transactions_integration_test() {
         Params::Text("bar".to_string()),
         ];
     let ops = vec![
-        Operation::from_list(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_list(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -262,13 +272,13 @@ async fn unsigned_transactions_integration_test() {
 
     let operation_name = "setEntityViaStruct";
     let params = vec![
-        ("int", Params::Integer(1)),
-        ("string1", Params::Text("foo".to_string())),
-        ("string2", Params::Text("bar".to_string())),
+        ("int".to_string(), Params::Integer(1)),
+        ("string1".to_string(), Params::Text("foo".to_string())),
+        ("string2".to_string(), Params::Text("bar".to_string())),
         ];
     let ops = vec![
-        Operation::from_dict(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_dict(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),
@@ -280,12 +290,12 @@ async fn unsigned_transactions_integration_test() {
 
     let operation_name = "nestedArguments";
     let params = vec![
-    ("multiStruct", Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())])),
-    ("arrayExample", Params::Array(vec![Params::Text("foo".to_string())])),
+    ("multiStruct".to_string(), Params::Array(vec![Params::Integer(1),Params::Text("foo".to_string()),Params::Text("bar".to_string())])),
+    ("arrayExample".to_string(), Params::Array(vec![Params::Text("foo".to_string())])),
     ];
     let ops = vec![
-        Operation::from_dict(operation_name, params),
-        Operation::from_list("nop", vec![Params::Integer(random_integer.into())])
+        Operation::from_dict(operation_name.to_string(), params),
+        Operation::from_list("nop".to_string(), vec![Params::Integer(random_integer.into())])
     ];
     let tx = Transaction{
         blockchain_rid: brid_vec.clone(),

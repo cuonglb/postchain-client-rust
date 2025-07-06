@@ -105,16 +105,16 @@ use postchain_client::utils::operation::{Operation, Params};
 
 // Create operation with named parameters (dictionary)
 let operation = Operation::from_dict(
-    "operation_name",
+    "operation_name".to_string(),
     vec![
-        ("param1", Params::Text("value1".to_string())),
-        ("param2", Params::Integer(42)),
+        ("param1".to_string(), Params::Text("value1".to_string())),
+        ("param2".to_string(), Params::Integer(42)),
     ]
 );
 
 // Or create operation with unnamed parameters (list)
 let operation = Operation::from_list(
-    "operation_name",
+    "operation_name".to_string(),
     vec![
         Params::Text("value1".to_string()),
         Params::Integer(42),
