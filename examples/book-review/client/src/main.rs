@@ -67,7 +67,7 @@ async fn create_new_books(brid: &String, rc: &RestClient<'_>) {
 
     for book in &books {
         let param = Params::from_struct_to_list(book);
-        operations.push(Operation::from_list("create_book", param));
+        operations.push(Operation::from_list("create_book".to_string(), param));
     }
 
     let brid_vec = hex::decode(brid.clone()).unwrap();
@@ -99,8 +99,8 @@ async fn create_book_review(brid: &String, rc: &RestClient<'_>) {
     let param = Params::from_struct_to_list(&book_review);
 
     let operations = vec![
-        Operation::from_list("create_book_review", param),
-        Operation::from_list("nop", vec![])
+        Operation::from_list("create_book_review".to_string(), param),
+        Operation::from_list("nop".to_string(), vec![])
     ];
 
     let brid_vec = hex::decode(brid.clone()).unwrap();

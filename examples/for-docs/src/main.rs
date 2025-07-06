@@ -91,7 +91,7 @@ async fn do_query_gtv_using_struct_and_handle_query_respose(rc: &RestClient<'_>,
 
 async fn send_unsign_transaction(rc: &RestClient<'_>, brid: &str) {
     let operations = vec![
-        Operation::from_list("setBoolean", vec![
+        Operation::from_list("setBoolean".to_string(), vec![
             Params::Boolean(true)
             ])
     ];
@@ -113,10 +113,10 @@ async fn send_unsign_transaction(rc: &RestClient<'_>, brid: &str) {
 
 async fn send_sign_transaction(rc: &RestClient<'_>, brid: &str, privkey: &str) {
     let operations = vec![
-        Operation::from_list("setBoolean", vec![
+        Operation::from_list("setBoolean".to_string(), vec![
             Params::Boolean(true)
             ]),
-        Operation::from_list("nop", vec![
+        Operation::from_list("nop".to_string(), vec![
             Params::Boolean(true)
             ])
     ];
@@ -143,10 +143,10 @@ async fn send_sign_transaction(rc: &RestClient<'_>, brid: &str, privkey: &str) {
 
 async fn send_multi_sign_transaction(rc: &RestClient<'_>, brid: &str, privkeys: &[&str]) {
     let operations = vec![
-        Operation::from_list("setBoolean", vec![
+        Operation::from_list("setBoolean".to_string(), vec![
             Params::Boolean(true)
             ]),
-        Operation::from_list("nop", vec![
+        Operation::from_list("nop".to_string(), vec![
             Params::Boolean(true)
             ])
     ];

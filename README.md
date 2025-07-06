@@ -12,7 +12,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-postchain-client = "0.0.4"
+postchain-client = "0.0.5"
 tokio = { version = "1.42.0", features = ["rt"] }
 ```
 
@@ -20,7 +20,7 @@ tokio = { version = "1.42.0", features = ["rt"] }
 
 ```toml
 [dependencies]
-postchain-client = "0.0.4"
+postchain-client = "0.0.5"
 tokio = { version = "1.42.0", features = ["rt"] }
 serde = { version = "1.0.216", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -105,16 +105,16 @@ use postchain_client::utils::operation::{Operation, Params};
 
 // Create operation with named parameters (dictionary)
 let operation = Operation::from_dict(
-    "operation_name",
+    "operation_name".to_string(),
     vec![
-        ("param1", Params::Text("value1".to_string())),
-        ("param2", Params::Integer(42)),
+        ("param1".to_string(), Params::Text("value1".to_string())),
+        ("param2".to_string(), Params::Integer(42)),
     ]
 );
 
 // Or create operation with unnamed parameters (list)
 let operation = Operation::from_list(
-    "operation_name",
+    "operation_name".to_string(),
     vec![
         Params::Text("value1".to_string()),
         Params::Integer(42),
