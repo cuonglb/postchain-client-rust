@@ -818,8 +818,13 @@ fn gtv_test_simple_integer() {
 }
 
 #[test]
-fn gtv_test_simple_negative_integer() {
+fn gtv_test_simple_negative_integer_1() {
   assert_roundtrips_simple(Params::Integer(-65535), "a3050203ff0001");
+}
+
+#[test]
+fn gtv_test_simple_negative_integer_2() {
+  assert_roundtrips_simple(Params::Integer(-283515829), "a3060204ef19e44b");
 }
 
 #[test]
