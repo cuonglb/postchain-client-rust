@@ -64,7 +64,8 @@ pub trait GTVParams: Clone {
 pub fn write_explicit_element<T: asn1::Asn1Writable>(writer: &mut asn1::Writer, val: &T, tag: u32)
   -> asn1::WriteResult {
   let tag = asn1::explicit_tag(tag);
-  writer.write_tlv(tag, |dest| asn1::Writer::new(dest).write_element(val))
+  let content_length: Option<usize> = val.encoded_length();
+  writer.write_tlv(tag, content_length, |dest| asn1::Writer::new(dest).write_element(val))
 }
 
 impl GTVParams for Params {
