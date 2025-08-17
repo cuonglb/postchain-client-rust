@@ -301,13 +301,13 @@ impl<'a> RestClient<'a> {
         self.get_transaction_status_with_poll(blockchain_rid, tx_rid, 0).await
     }
 
-/// Fetches and parses transaction-related data from the Postchain node.
+    /// Fetches and parses transaction-related data from a Postchain node.
     ///
     /// This is a generic helper function to retrieve data associated with a transaction
-    /// (like confirmation proofs or raw transaction data) from a Postchain node.
-    /// It handles the common logic of making the REST API call, extracting a specific
-    /// string field from the JSON response, and then parsing that string using a provided
-    /// parsing function.
+    /// (such as confirmation proofs or raw transaction data) from a Postchain node's
+    /// REST API. It encapsulates the common logic of constructing the REST API call,
+    /// making the request, extracting a specific string field from the JSON response,
+    /// and then parsing that string using a provided parsing function.
     ///
     /// # Type Parameters
     ///
@@ -318,13 +318,19 @@ impl<'a> RestClient<'a> {
     /// # Arguments
     ///
     /// * `blockchain_rid` - A string slice representing the Blockchain RID.
-    /// * `tx_rid` - A string slice representing the Transaction RID.
+    /// * `tx_rid` - An optional string slice representing the Transaction RID. If `None`, an empty string is used in the path.
     /// * `endpoint_suffix` - An optional string slice that will be appended to the base
-    ///   transaction path (`/tx/{blockchain_rid}/{tx_rid}`). For example, use "confirmationProof"
-    ///   to get the confirmation proof, or `None` to get the raw transaction data.
-    /// * `field_name` - The name of the JSON field to extract the data from (e.g., "proof" or "tx").
+    ///   transaction path (`/tx/{blockchain_rid}/{tx_rid}`). For example, use `"confirmationProof"`
+    ///   to get the confirmation proof, or `None` to get the raw transaction data if the base path
+    ///   itself yields the desired content.
+    /// * `field_name` - The name of the JSON field to extract the data from (e.g., `"proof"` or `"tx"`).
+    ///   If `None`, the entire JSON response is converted to a string and passed to `parser_fn`.
     /// * `parser_fn` - A closure or function pointer that takes the extracted string slice
+    ///   (or the stringified JSON response if `field_name` is `None`)
     ///   and attempts to parse it into the desired return type `R`.
+    /// * `prefix_query` - The base path prefix for the API call (e.g., `"tx"` for `/tx/{rid}`).
+    /// * `query_params` - An optional vector of key-value tuple string slices `(&str, &str)`
+    ///   representing query parameters to append to the URL (e.g., `vec![("param", "value")]`).
     ///
     /// # Returns
     ///
@@ -336,42 +342,82 @@ impl<'a> RestClient<'a> {
     /// # Errors
     ///
     /// This function can return a `RestError` in the following cases:
-    /// - If the underlying `postchain_rest_api` call fails (e.g., network issues).
+    /// - If the underlying `postchain_rest_api` call fails (e.g., network issues, HTTP errors).
     /// - If the response from the node is not a JSON object.
-    /// - If the JSON response does not contain the `field_name`, or if its value is not a string.
-    /// - If the `parser_fn` fails to parse the extracted string.
+    /// - If `field_name` is `Some` and the JSON response does not contain the specified field,
+    ///   or if its value is not a string.
+    /// - If the `parser_fn` fails to parse the extracted string (its `Err(String)` is wrapped into a `RestError`).
     ///
     /// # Example (Conceptual Usage within other methods)
     ///
     /// ```rust
-    /// # use postchain_client::transport::{RestClient, RestError};
-    /// # use postchain_client::utils::transaction::{Transaction, TransactionConfirmationProofData};
+    /// # use postchain_client::transport::{RestClient, RestError, RestRequestMethod, RestResponse};
+    /// # use serde_json::Value;
+    /// # // Mock implementations for example to compile
+    /// # #[derive(Debug)]
+    /// # struct Transaction;
+    /// # impl Transaction {
+    /// #    fn confirmation_proof(_s: &str) -> Result<Self, String> { Ok(Transaction) }
+    /// #    fn from_raw_data(_s: &str) -> Result<Self, String> { Ok(Transaction) }
+    /// # }
+    /// # #[derive(Debug)]
+    /// # struct TransactionConfirmationProofData;
+    /// # impl RestClient<'_> {
+    /// #    async fn postchain_rest_api(&self, _method: RestRequestMethod, _path_segments: Option<&[&str]>,
+    /// #                                 _query_params: Option<&Vec<(&str, &str)>>, _body: Option<&str>, _headers: Option<&[(&str, &str)]>) -> Result<RestResponse, RestError> {
+    /// #        Ok(RestResponse::Json(Value::String("mock_data".to_string())))
+    /// #    }
+    /// # }
+    ///
     /// # async fn _example_usage(client: &RestClient<'_>, blockchain_rid: &str, tx_rid: &str) -> Result<(), RestError> {
-    /// // How `get_confirmation_proof` would now use this generic function:
+    /// // How `get_confirmation_proof` might use this generic function:
     /// let proof_data: TransactionConfirmationProofData = client.get_transaction_data(
     ///     blockchain_rid,
-    ///     tx_rid,
+    ///     Some(tx_rid), // Tx RID is often required for proof
     ///     Some("confirmationProof"),
-    ///     "proof",
+    ///     Some("proof"), // Extract the "proof" field
     ///     |s| Transaction::confirmation_proof(s),
+    ///     "tx", // Prefix for transaction related endpoints
+    ///     None, // No additional query parameters
     /// ).await?;
+    /// println!("Proof data: {:?}", proof_data);
     ///
-    /// // How `get_raw_transaction_data` would now use this generic function:
+    /// // How `get_raw_transaction_data` might use this generic function:
     /// let raw_tx_data: Transaction = client.get_transaction_data(
     ///     blockchain_rid,
-    ///     tx_rid,
-    ///     None, // No suffix for raw transaction data
-    ///     "tx",
+    ///     Some(tx_rid),
+    ///     None, // No endpoint suffix for raw transaction data
+    ///     Some("tx"), // Extract the "tx" field
     ///     |s| Transaction::from_raw_data(s),
+    ///     "tx",
+    ///     None,
     /// ).await?;
+    /// println!("Raw TX data: {:?}", raw_tx_data);
+    ///
+    /// // Example with query parameters and parsing the whole response if no specific field needed
+    /// // (Hypothetical: if a specific endpoint returns a simple string that needs parsing)
+    /// let some_parsed_value: String = client.get_transaction_data(
+    ///     blockchain_rid,
+    ///     None, // No tx_rid needed for this hypothetical call
+    ///     Some("some_simple_value_endpoint"),
+    ///     None, // No specific field name, parse the whole response string
+    ///     |s| Ok(s.to_string()), // Simple parser that returns the string itself
+    ///     "data", // Different prefix for this type of data
+    ///     Some(&vec![("version", "1")]), // Example query parameter
+    /// ).await?;
+    /// println!("Some parsed value: {}", some_parsed_value);
+    ///
     /// # Ok(())
     /// # }
     /// ```
-    async fn get_transaction_data<R, F>(&self, blockchain_rid: &str, tx_rid: &str, endpoint_suffix: Option<&str>, field_name: &str, parser_fn: F ) -> Result<R, RestError>
+    #[allow(clippy::too_many_arguments)]
+    // Yes, it has too many arguments and needs to be optimized :)
+    async fn get_transaction_data<R, F>(&self, blockchain_rid: &str, tx_rid: Option<&str>, endpoint_suffix: Option<&str>,
+        field_name: Option<&str>, parser_fn: F , prefix_query: &str, query_params: Option<&Vec<(&str, &str)>>) -> Result<R, RestError>
     where
         F: FnOnce(&str) -> Result<R, String>,
     {
-        let mut path_segments = vec!["tx", blockchain_rid, tx_rid];
+        let mut path_segments = vec![prefix_query, blockchain_rid, tx_rid.unwrap_or("")];
         if let Some(suffix) = endpoint_suffix {
             path_segments.push(suffix);
         }
@@ -380,7 +426,7 @@ impl<'a> RestClient<'a> {
             .postchain_rest_api(
                 RestRequestMethod::GET,
                 Some(path_segments.as_slice()),
-                None,
+                query_params,
                 None,
                 None,
             )
@@ -388,25 +434,36 @@ impl<'a> RestClient<'a> {
 
         match resp {
             RestResponse::Json(json_val) => {
-                match json_val.get(field_name).and_then(|v| v.as_str()) {
-                    Some(data_str) => {
-                        parser_fn(data_str).map_err(|e| RestError {
-                            error_str: Some(format!(
-                                "Failed to parse '{field_name}' field: {e}"
-                            )),
+                match field_name {
+                    Some(field) => {
+                        match json_val.get(field).and_then(|v| v.as_str()) {
+                            Some(data_str) => {
+                                parser_fn(data_str).map_err(|e| RestError {
+                                    error_str: Some(format!(
+                                        "Failed to parse '{field}' field: {e}"
+                                    )),
+                                    ..RestError::default()
+                                })
+                            }
+                            None => Err(RestError {
+                                error_str: Some(format!(
+                                    "Missing or invalid '{field}' field in response"
+                                )),
+                                ..RestError::default()
+                            }),
+                        }
+                    },
+                    None => {
+                        // When no field is specified, parse the entire JSON value as a string
+                        parser_fn(json_val.to_string().as_str()).map_err(|e| RestError {
+                            error_str: Some(format!("Failed to parse response: {e}")),
                             ..RestError::default()
                         })
                     }
-                    None => Err(RestError {
-                        error_str: Some(format!(
-                            "Missing or invalid '{field_name}' field in response"
-                        )),
-                        ..RestError::default()
-                    }),
                 }
             }
             _ => Err(RestError {
-                error_str: Some(format!("Expected JSON response with '{field_name}' field")),
+                error_str: Some("Expected JSON response".to_string()),
                 ..RestError::default()
             }),
         }
@@ -459,10 +516,12 @@ impl<'a> RestClient<'a> {
     pub async fn get_confirmation_proof(&self, blockchain_rid: &str, tx_rid: &str) -> Result<TransactionConfirmationProofData, RestError> {
         self.get_transaction_data(
             blockchain_rid,
-            tx_rid,
+            Some(tx_rid),
             Some("confirmationProof"),
-            "proof",
+            Some("proof"),
             Transaction::confirmation_proof,
+            "tx",
+            None
         ).await
     }
 
@@ -510,9 +569,136 @@ impl<'a> RestClient<'a> {
     /// # }
     /// ```
     pub async fn get_raw_transaction_data(&self, blockchain_rid: &str, tx_rid: &str) -> Result<Transaction, RestError>{
-        self.get_transaction_data(blockchain_rid, tx_rid, None, "tx", |s| {
+        self.get_transaction_data(blockchain_rid, Some(tx_rid), None, Some("tx"), |s| {
             Transaction::from_raw_data(s)
-        }).await
+        }, "tx", None).await
+    }
+
+    /// Fetches and deserializes transaction information from the Postchain node.
+    ///
+    /// This function acts as a wrapper around `get_transaction_data` to retrieve and
+    /// deserialize generic transaction-related data. It expects the Postchain API
+    /// to return a JSON structure that can be directly deserialized into the specified
+    /// type `T`.
+    ///
+    /// The API endpoint used is typically `/transactions/{blockchain_rid}[/{tx_rid}]`.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T`: The target type to deserialize the JSON response into. This type must
+    ///   implement `serde::Deserialize` to enable automatic deserialization.
+    ///
+    /// # Arguments
+    ///
+    /// * `blockchain_rid` - A string slice representing the Blockchain RID.
+    /// * `tx_rid` - An optional string slice representing a specific Transaction RID.
+    ///   If provided, the request targets a single transaction's info. If `None`,
+    ///   the request might retrieve a list of transactions or general transaction-related data
+    ///   depending on the `query_params`.
+    /// * `query_params` - An optional vector of key-value tuple string slices `(&str, &str)`
+    ///   representing additional query parameters for the API call (e.g., pagination, filtering).
+    ///
+    /// # Returns
+    ///
+    /// A `Result<T, RestError>`:
+    /// - `Ok(T)`: On successful retrieval and deserialization of the data.
+    /// - `Err(RestError)`: If the request fails, the response is not valid JSON for `T`,
+    ///   or any underlying `get_transaction_data` error occurs.
+    ///
+    /// # Errors
+    ///
+    /// This function can return a `RestError` in the following cases:
+    /// - If the underlying HTTP request fails (e.g., network issues, invalid URL).
+    /// - If the Postchain node returns a non-JSON response.
+    /// - If the JSON response cannot be deserialized into the target type `T` (e.g.,
+    ///   missing fields, type mismatches).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # async fn _example_usage() -> Result<(), RestError> {
+    /// let client = MockRestClient;
+    /// let blockchain_rid = "mock_blockchain_rid";
+    ///
+    /// // Fetch info for a specific transaction
+    /// let tx_id = "tx_id_123";
+    /// let single_tx_info: TransactionInfo = client.get_transactions_info(
+    ///     blockchain_rid,
+    ///     Some(tx_id),
+    ///     None,
+    /// ).await?;
+    /// println!("Single transaction info: {:?}", single_tx_info);
+    /// assert_eq!(single_tx_info.id, "tx_id_123");
+    ///
+    /// // Fetch a list of transactions (assuming the API supports this with tx_rid = None)
+    /// let all_tx_info: TransactionsList = client.get_transactions_info(
+    ///     blockchain_rid,
+    ///     None,
+    ///     Some(&vec![("limit", "10")]),
+    /// ).await?;
+    /// println!("All transactions info: {:?}", all_tx_info);
+    /// assert_eq!(all_tx_info.transactions.len(), 2);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_transactions_info<T>(&self, blockchain_rid: &str, tx_rid: Option<&str>, query_params: Option<&Vec<(&str, &str)>>) -> Result<T, RestError> 
+    where
+        T: for<'de> serde::Deserialize<'de>
+    {
+        self.get_transaction_data(blockchain_rid, tx_rid, None, None, |s| {
+            match serde_json::from_str::<T>(s) {
+                Ok(r) => Ok(r),
+                Err(e) => Err(format!("Failed to fetch transaction info: {e}"))
+            }
+        }, "transactions", query_params).await
+    }
+
+    /// Fetches the total number of successful transactions for a given blockchain.
+    ///
+    /// This function retrieves the count of successful transactions by calling the
+    /// `/transactions/{blockchain_rid}/count` endpoint of the Postchain node.
+    /// It specifically parses the `transactionsCount` field from the JSON response.
+    ///
+    /// # Arguments
+    ///
+    /// * `blockchain_rid` - A string slice representing the Blockchain RID for which
+    ///   to retrieve the transaction count.
+    ///
+    /// # Returns
+    ///
+    /// A `Result<i64, RestError>`:
+    /// - `Ok(i64)`: On successful retrieval and parsing of the transaction count.
+    /// - `Err(RestError)`: If the request fails, the response is not valid JSON,
+    ///   the `transactionsCount` field is missing or not a valid `i64`, or any
+    ///   underlying `get_transaction_data` error occurs.
+    ///
+    /// # Errors
+    ///
+    /// This function can return a `RestError` in the following cases:
+    /// - If the underlying HTTP request fails (e.g., network issues, invalid URL).
+    /// - If the Postchain node returns a non-JSON response.
+    /// - If the JSON response does not contain the `transactionsCount` field, or
+    ///   if its value cannot be interpreted as an integer.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # async fn _example_usage() -> Result<(), RestError> {
+    /// let client = MockRestClient;
+    /// let blockchain_rid = "mock_blockchain_rid";
+    ///
+    /// let count = client.get_number_successful_transactions(blockchain_rid).await?;
+    /// println!("Number of successful transactions: {}", count);
+    /// assert_eq!(count, 42);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn get_number_successful_transactions(&self, blockchain_rid: &str) -> Result<i64, RestError>{
+        self.get_transaction_data(blockchain_rid, Some("count"), None, None, |s| {
+            let transactions_count = serde_json::from_str::<serde_json::Value>(s)
+            .ok().and_then(|v| v["transactionsCount"].as_i64()).unwrap();
+            Ok(transactions_count)
+        }, "transactions", None).await
     }
 
     /// Gets the status of a transaction with polling for confirmation.

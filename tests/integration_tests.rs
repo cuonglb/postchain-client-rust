@@ -16,7 +16,7 @@ fn initialize_test_envs() {
 }
 
 const POSTCHAIN_SINGLE_NODE_API_URL: &str = "http://localhost:7740";
-const POSTCHAIN_MULTI_NODE_API_URL: &str = "https://node0.devnet1.chromia.dev:7740";
+const POSTCHAIN_MULTI_NODE_API_URL: &str = "https://node0.devnet1.chromia.dev";
 
 async fn assert_roundtrips(
     rc: &RestClient<'_>,
@@ -102,7 +102,7 @@ async fn initialize_rest_client() -> (String, RestClient<'static>) {
     let brid_info: (String, RestClient<'static>) = if let Ok(val) = get_blockchain_rid {
         (val, rc)
     } else {
-        let brid = "7A37DD331AC8FED64EEFCCA231B0F975DE7F4371CE5CA44105A5B117DF6DE251".to_string();
+        let brid = "9E7E51C9929C674B0FF77A2B6C6682CEC4DC998E4DC3D4089253947FE4197DFA".to_string();
 
         rc = client::RestClient {
             node_url: vec![POSTCHAIN_MULTI_NODE_API_URL],

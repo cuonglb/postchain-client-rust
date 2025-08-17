@@ -145,6 +145,27 @@ pub struct TransactionConfirmationProofData {
   pub merkle_proof_tree: Vec<crate::utils::operation::Params>
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct TransactionInfo {
+    #[serde(rename = "blockRID")]
+    pub block_rid: String,
+    #[serde(rename = "blockHeight")]
+    pub block_height: i64,
+    #[serde(rename = "blockHeader")]
+    pub block_header: String,
+    pub witness: String,
+    pub witnesses: Vec<String>,
+    #[serde(rename = "witnessSignatures")]
+    pub witness_signatures: Vec<String>,
+    pub timestamp: i64,
+    #[serde(rename = "txRID")]
+    pub tx_rid: String,
+    #[serde(rename = "txHash")]
+    pub tx_hash: String,
+    #[serde(rename = "txData")]
+    pub tx_data: String
+}
+
 impl Transaction {
     /// Creates a new transaction with the specified parameters.
     ///
@@ -647,4 +668,35 @@ async fn get_raw_transaction_data() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn get_transactions_info() {
+    use crate::transport::client::RestClient;
+
+    let rc = RestClient{
+        node_url: vec!["https://system.chromaway.com"],
+        ..Default::default()
+    };
+
+    let blockchain_rid = "15C0CA99BEE60A3B23829968771C50E491BD00D2E3AE448580CD48A8D71E7BBA";
+    let tx_rid = "B5AE42A1645992D74E955A17D90F275778A19ADD3EB68A90EB0DD7225641A43A";
+
+    let transaction_info: TransactionInfo = rc.get_transactions_info(blockchain_rid, Some(tx_rid), None).await.unwrap();
+
+    assert_eq!("BA543AEA864501373928F830AA4EE166FE215FC21F3176BF06B4454ADF45BC36", transaction_info.block_rid);
+    assert_eq!(3042601, transaction_info.block_height);
+
+    let transactions_info: Vec<TransactionInfo> = rc.get_transactions_info(blockchain_rid, None, Some(&vec![
+        ("limit", "1"),
+        // ("before-time", "1740659274153"),
+        // ("after-time", "1740659274152"),
+        // ("signer", "02FEA5C0D8396B38C50200F2A583DCC8ED23416B9F9700A4AA435D57865939A536")
+    ])).await.unwrap();
+
+    assert!(transactions_info[0].block_height > 0);
+
+    let number_successful_transactions = rc.get_number_successful_transactions(blockchain_rid).await.unwrap();
+
+    assert!(number_successful_transactions > 0);
 }
