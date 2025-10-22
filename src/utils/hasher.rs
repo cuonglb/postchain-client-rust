@@ -56,6 +56,7 @@
 use sha2::{Sha256, Digest};
 use crate::utils::operation::Params;
 use crate::encoding::gtv::encode_value as gtv_encode_value;
+use secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, Message};
 
 /// Represents different types of nodes in the Merkle tree structure.
 /// 
@@ -545,6 +546,48 @@ pub fn gtv_hash(value: Params, hash_version: u8) -> Result<[u8; 32], HashError> 
     Ok(MerkleHashCalculator::calculate_merkle_hash(&tree))
 }
 
+/// Verifies an ECDSA signature against a compressed secp256k1 public key and a message hash.
+///
+/// This function is designed for common cryptographic verification tasks, specifically
+/// handling 33-byte compressed public keys, 64-byte compact signatures, and 32-byte
+/// message hashes (e.g., SHA-256 or Keccak-256 outputs).
+///
+/// # Arguments
+///
+/// * `pubkey_bytes` - A 33-byte array (`[u8; 33]`) representing the **compressed**
+///   secp256k1 public key (prefix 0x02 or 0x03 followed by the X-coordinate).
+/// * `signature_bytes` - A 64-byte array (`[u8; 64]`) representing the signature
+///   in **compact (R, S) format** (32 bytes R, 32 bytes S).
+/// * `hashed_data_bytes` - A 32-byte array (`[u8; 32]`) representing the **message hash**
+///   that was signed.
+///
+/// # Returns
+///
+/// * `Ok(true)`: The signature is valid for the given public key and message hash.
+/// * `Ok(false)`: The signature is invalid (the verification check failed, typically
+///   an `IncorrectSignature` error from the underlying library).
+/// * `Err(secp256k1::Error)`: An error occurred during input parsing (e.g., invalid
+///   public key format, invalid signature format) or an internal library error.
+///
+/// # Errors
+///
+/// Returns an error if any of the input byte slices cannot be successfully converted
+/// into their respective secp256k1 types (`PublicKey`, `Signature`, `Message`).
+/// Note that a verification failure is captured as `Ok(false)`, not an `Err`.
+pub fn verify_signature(pubkey_bytes: [u8;33], signature_bytes: [u8;64], hashed_data_bytes: [u8; 32]) -> Result<bool, secp256k1::Error> {
+    let public_key = PublicKey::from_slice(&pubkey_bytes)?;
+    let signature = Signature::from_compact(&signature_bytes)?;
+    let message = Message::from_slice(&hashed_data_bytes)?;
+
+    let secp = Secp256k1::new();
+
+    match secp.verify_ecdsa(message, &signature, &public_key) {
+        Ok(_) => Ok(true),
+        Err(secp256k1::Error::IncorrectSignature) => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
 #[test]
 fn test_gtv_hash() {
     use std::collections::BTreeMap;
@@ -650,4 +693,30 @@ fn test_gtv_hash_v1_and_v2_of_array_of_dicts() {
 
     let result = gtv_hash(data, 2).unwrap();
     assert_eq!(hex::encode(result), hash_v2_result);
+}
+
+#[test]
+fn test_success_verify_signature() {
+    let sample_pubkey = "0350fe40766bc0ce8d08b3f5b810e49a8352fdd458606bd5fafe5acdcdc8ff3f57";
+    let sample_signature = "1343d7602a4319bd9e82ebb48426054cac6bad34731a8fd897c7d58536fff13f278dfe7a44f4cd3ffa393e49a7c2e93d3652266bb379a532159ba81bab61657e";
+    let sample_hashed_message = "40f21d1c30ac1a6739b8bf5c050f72124eb647a916447e7ebb0748726f35bf48";
+
+    let is_valid = verify_signature(hex::decode(sample_pubkey).unwrap().try_into().unwrap(),
+        hex::decode(sample_signature).unwrap().try_into().unwrap(),
+        hex::decode(sample_hashed_message).unwrap().try_into().unwrap()).unwrap();
+
+    assert!(is_valid);
+}
+
+#[test]
+fn test_fail_verify_signature() {
+    let sample_pubkey = "0350fe40766bc0ce8d08b3f5b810e49a8352fdd458606bd5fafe5acdcdc8ff3f57";
+    let sample_signature = "1243d7602a4319bd9e82ebb48426054cac6bad34731a8fd897c7d58536fff13f278dfe7a44f4cd3ffa393e49a7c2e93d3652266bb379a532159ba81bab61657e";
+    let sample_hashed_message = "40f21d1c30ac1a6739b8bf5c050f72124eb647a916447e7ebb0748726f35bf48";
+
+    let is_valid = verify_signature(hex::decode(sample_pubkey).unwrap().try_into().unwrap(),
+        hex::decode(sample_signature).unwrap().try_into().unwrap(),
+        hex::decode(sample_hashed_message).unwrap().try_into().unwrap()).unwrap();
+
+    assert!(!is_valid);
 }
