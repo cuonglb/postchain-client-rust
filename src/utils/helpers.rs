@@ -25,16 +25,24 @@ pub struct QueryResponseSignatureData {
     pub response: Params
 }
 
+fn err_missing_or_invalid_key(key: &str) -> String {
+    format!("Missing or invalid list entry for '{}' field", key)
+}
+
+fn err_invalid_data_type(key: &str, expected_type: &str) -> String {
+    format!("'{}' field found, but is not a {}", key, expected_type)
+}
+
 fn get_string(dict: &Dictionary, key: &str) -> Result<String, String> {
     match dict.get(key) {
         Some(ListEntry::Item(item)) => {
             if let BareItem::String(val) = &item.bare_item {
                 Ok(val.to_string())
             } else {
-                Err(format!("'{}' field found, but is not a String", key))
+                Err(err_invalid_data_type(key, "String"))
             }
         },
-        _ => Err(format!("Missing or invalid list entry for '{}' field", key)),
+        _ => Err(err_missing_or_invalid_key(key)),
     }
 }
 
@@ -45,16 +53,16 @@ fn get_byte_sequence<const N: usize>(dict: &Dictionary, key: &str) -> Result<[u8
                 val.as_slice().try_into()
                     .map_err(|_| format!("'{}' field has incorrect length (expected {} bytes, got {})", key, N, val.len()))
             } else {
-                Err(format!("'{}' field found, but is not a ByteSequence", key))
+                Err(err_invalid_data_type(key, "ByteSequence"))
             }
         },
-        _ => Err(format!("Missing or invalid list entry for '{}' field", key)),
+        _ => Err(err_missing_or_invalid_key(key)),
     }
 }
 
 impl FromStr for QueryResponseSignaturedHeader {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
 
         let sfv_dict: Dictionary = Parser::new(s)
@@ -64,7 +72,7 @@ impl FromStr for QueryResponseSignaturedHeader {
         let alg: String = get_string(&sfv_dict, "alg")?;
         let subject: [u8; 33] = get_byte_sequence::<33>(&sfv_dict, "subject")?;
         let sig: [u8; 64] = get_byte_sequence::<64>(&sfv_dict, "sig")?;
-        
+
         Ok(QueryResponseSignaturedHeader { alg, subject, sig })
     }
 }
@@ -101,7 +109,7 @@ mod tests {
     /// Document: https://gitlab.com/chromaway/core/postchain/-/blob/3.43.0/postchain-base/src/main/resources/restapi-docs/postchain-restapi.yaml?ref_type=tags#L1072-1104
     use super::*;
     use hex;
-    
+
     #[test]
     fn test_parse_query_structured_header_success() {
         let header_str = r#"alg="secp256k1", subject=:A6MBaXvfzXBDE7pI5R1WdUPyoYIDHv1pFd3Ae7zE4WBw:, sig=:QCZVnPLGwzkKw+BZHb22vxNcroxfb6FPeWkW7z/xr01hul2EdUSsCRUm6M+LpsxTc781OK3i9Vgb72wbmJXI7A==:"#;
@@ -128,7 +136,7 @@ mod tests {
         let error = QueryResponseSignaturedHeader::from_str(header_str).unwrap_err();
         assert!(error.contains("'subject' field found, but is not a ByteSequence"));
     }
-    
+
     #[test]
     fn test_parse_query_structured_header_incorrect_length() {
         let header_str = r#"alg="secp256k1", subject=:A6MBaXvfzXBDE7pI5R1WdUPyoYIDHv1pFd3Ae7zE4WB:, sig=:QCZVnPLGwzkKw+BZHb22vxNcroxfb6FPeWkW7z/xr01hul2EdUSsCRUm6M+LpsxTc781OK3i9Vgb72wbmJXI7A==:"#;
