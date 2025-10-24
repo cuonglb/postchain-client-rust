@@ -25,7 +25,24 @@ async fn assert_roundtrips(
     query_args: Option<&mut Vec<(&str, Params)>>,
     expected_value: &str,
 ) {
-    let do_query = rc.query(brid, None, query_type, None, query_args).await;
+
+    let owned_query_args: Option<Vec<(String, Params)>> = query_args.map(|vec_ref| {
+        let owned_vec: Vec<(String, Params)> = std::mem::take(vec_ref)
+            .into_iter()
+            .map(|(s_ref, params)| (s_ref.to_string(), params))
+            .collect();
+        owned_vec
+    });
+
+    let mut owned_args_storage = owned_query_args.unwrap_or_default();
+
+    let query_args_for_call = if owned_args_storage.is_empty() {
+        None
+    } else {
+        Some(&mut owned_args_storage)
+    };
+
+    let do_query = rc.query(brid, None, query_type, None, query_args_for_call).await;
 
     print!("test query = {query_type} ... ");
 

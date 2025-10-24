@@ -51,8 +51,8 @@ use postchain_client::utils::operation::Params;
 async fn execute_query_with_params(client: &RestClient<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let query_type = "<query_name>";
     let mut query_arguments = vec![
-        ("arg1", Params::Text("value1".to_string())),
-        ("arg2", Params::Text("value2".to_string())),
+        ("arg1".to_string(), Params::Text("value1".to_string())),
+        ("arg2".to_string(), Params::Text("value2".to_string())),
     ];
     
     let result = client.query(

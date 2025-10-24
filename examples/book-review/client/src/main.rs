@@ -30,7 +30,7 @@ const PRIV_KEY: &str = "C70D5A77CC10552019179B7390545C46647C9FCA1B6485850F2B913F
 
 async fn get_all_books(brid: &String, rc: &RestClient<'_>) {
     println!("Get all books query");
-    let resp = rc.query::<&str>(&brid, None, "get_all_books", None, None).await;
+    let resp = rc.query(&brid, None, "get_all_books", None, None).await;
 
     if let Ok(val) = resp {
         if let RestResponse::Bytes(val1) = val {

@@ -800,13 +800,13 @@ impl<'a> RestClient<'a> {
     ///
     /// # Returns
     /// * `Result<RestResponse, RestError>` - Query response or error
-    pub async fn query<T: AsRef<str>>(
+    pub async fn query(
         &self,
         brid: &str,
         query_prefix: Option<&str>,
         query_type: &'a str,
         query_params: Option<&'a mut Vec<(&'a str, &'a str)>>,
-        query_args: Option<&'a mut Vec<(T, crate::utils::operation::Params)>>,
+        query_args: Option<&'a mut Vec<(String, crate::utils::operation::Params)>>,
     ) -> Result<RestResponse, RestError> {
         let query_prefix_str = query_prefix.unwrap_or("query_gtv");
 

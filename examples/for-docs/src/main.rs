@@ -6,7 +6,7 @@ use postchain_client::{
 
 async fn do_query_gtv_using_params(rc: &RestClient<'_>, brid: &str) {
     // Query GTV with no arguments
-    if let Ok(result) = rc.query::<&str>(brid, None, "api_version", None, None).await {
+    if let Ok(result) = rc.query(brid, None, "api_version", None, None).await {
         if let RestResponse::Bytes(val) = result {
             let api_version: i64 = gtv::decode(&val).unwrap().into();
             println!("api version = {:?}", api_version);
@@ -15,7 +15,7 @@ async fn do_query_gtv_using_params(rc: &RestClient<'_>, brid: &str) {
 
     // Query GTV with params
     let mut args = vec![
-        ("include_inactive", Params::Boolean(true))
+        ("include_inactive".to_string(), Params::Boolean(true))
         ];
     if let Ok(result) = rc.query(brid, None, "get_all_nodes", None, Some(&mut args)).await {
         if let RestResponse::Bytes(val) = result {
@@ -27,7 +27,7 @@ async fn do_query_gtv_using_params(rc: &RestClient<'_>, brid: &str) {
 }
 
 async fn do_query_gtv_using_params_2(rc: &RestClient<'_>, brid: &str) {
-     if let Ok(RestResponse::Bytes(result)) = rc.query::<&str>(brid, None, "test_map_with_bytearray_key", None, None).await {
+     if let Ok(RestResponse::Bytes(result)) = rc.query(brid, None, "test_map_with_bytearray_key", None, None).await {
         let r = gtv::decode(&result).unwrap();
         println!("{}", r.to_json_value()[0][0].to_string());
         println!("{}", r.to_json_value()[0][1].to_string());
