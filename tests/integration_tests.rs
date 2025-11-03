@@ -42,13 +42,13 @@ async fn assert_roundtrips(
         Some(&mut owned_args_storage)
     };
 
-    let do_query = rc.query(brid, None, query_type, None, query_args_for_call).await;
+    let do_query = rc.query(brid, None, query_type, None, query_args_for_call, None).await;
 
     print!("test query = {query_type} ... ");
 
     match do_query {
         Ok(val) => {
-            if let RestResponse::Bytes(val1) = val {
+            if let (RestResponse::Bytes(val1), _) = val {
                 assert_eq!(hex::encode(val1), expected_value);
                 println!("ok")
             }
@@ -713,4 +713,50 @@ async fn queries_integration_test_get_nodes_from_directory() {
             std::process::exit(0);
         }
     }
+}
+
+#[tokio::test]
+async fn test_client_detect_merkle_hash_version() {
+    let rc = RestClient{
+        node_url: vec!["https://node11.devnet1.chromia.dev"],
+        ..Default::default()
+    };
+
+    let blockchain_rid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
+
+    let merkle_hash_version = rc.detect_merkle_hash_version(blockchain_rid).await;
+
+    assert_eq!(merkle_hash_version, 2);
+}
+
+#[tokio::test]
+async fn test_query_with_height_and_signature() {
+    let rc = RestClient{
+        node_url: vec!["https://node0.testnet.chromia.com"],
+        ..Default::default()
+    };
+
+    let query_type = "get_lease_by_container_name";
+    let mut query_arguments = vec![
+        ("container_name".to_string(), Params::Text("b91f49e347f89fc9d0d0239daf51cbff287fee4a6fa5fbc59354f6f587ace210".to_string())),
+    ];
+
+    let result = rc.query_with_height_and_signature(
+        "090BCD47149FBB66F02489372E88A454E7A5645ADDE82125D40DF1EF0C76F874",
+        None,
+        query_type,
+        None,
+        Some(&mut query_arguments),
+        None
+    ).await.unwrap();
+
+    if let RestResponse::Bytes(val) = result.0 {
+        // If the query response signature is valid and successfully verified,
+        // the query response body will be returned; otherwise, an error will be returned,
+        // indicating either an invalid signature or a verification failure.
+        assert_ne!(val.len(), 0);
+        return;
+    }
+
+    assert!(false)
 }

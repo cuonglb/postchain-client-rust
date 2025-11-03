@@ -6,9 +6,9 @@ use reqwest::header::HeaderMap;
 use crate::utils::operation::Params;
 use std::collections::BTreeMap;
 
-pub const QUERY_REQUEST_SIGNATURE_HEADER: &str = "X-Accept-Query-Response-Signature";
-pub const QUERY_RESPONSE_SIGNATURE_HEADER: &str = "X-Query-Response-Signature";
-pub const QUERY_RESPONSE_BLOCK_HEIGHT_HEADER: &str = "X-Block-Height";
+pub const QUERY_REQUEST_SIGNATURE_HEADER: &str = "x-accept-query-response-signature";
+pub const QUERY_RESPONSE_SIGNATURE_HEADER: &str = "x-query-response-signature";
+pub const QUERY_RESPONSE_BLOCK_HEIGHT_HEADER: &str = "x-block-height";
 
 #[derive(Debug)]
 pub struct QueryResponseSignaturedHeader {
@@ -99,6 +99,21 @@ pub fn get_query_response_signature_header(headers: &HeaderMap) -> Option<QueryR
     headers.get(QUERY_RESPONSE_SIGNATURE_HEADER)
         .and_then(|value| value.to_str().ok())
         .and_then(|s| QueryResponseSignaturedHeader::from_str(s).ok())
+}
+
+pub fn verify_query_response_signature(qrsd: QueryResponseSignatureData, qrs: QueryResponseSignaturedHeader, hash_version: u8) -> Result<bool, String> {
+    use crate::utils::hasher::{gtv_hash, verify_signature};
+
+    let qrsd: Params = qrsd.to_params_dict();
+
+    let hashed_qrsd = gtv_hash(qrsd, hash_version).unwrap();
+
+    match verify_signature(qrs.subject, qrs.sig, hashed_qrsd) {
+        Ok(result) =>
+            Ok(result),
+        Err(err) =>
+            Err(format!("Failed to verify query response signature: {}", err)),
+    }
 }
 
 #[cfg(test)]

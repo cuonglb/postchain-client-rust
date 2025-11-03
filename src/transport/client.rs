@@ -9,13 +9,17 @@
 extern crate serde_json;
 extern crate url;
 
-use reqwest::{header::CONTENT_TYPE, Client};
+use reqwest::{header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue}, Client};
 use url::Url;
 
 use serde_json::Value;
-use std::{error::Error, time::Duration};
+use std::{error::Error, time::Duration, str::FromStr, collections::BTreeMap};
 
-use crate::utils::transaction::{Transaction, TransactionConfirmationProofData, TransactionStatus};
+use crate::utils::{operation::Params, transaction::{Transaction, TransactionConfirmationProofData, TransactionStatus}};
+use crate::utils::helpers::{
+    QUERY_REQUEST_SIGNATURE_HEADER, QUERY_RESPONSE_BLOCK_HEIGHT_HEADER, QUERY_RESPONSE_SIGNATURE_HEADER,
+    QueryResponseSignaturedHeader, QueryResponseSignatureData, verify_query_response_signature
+};
 
 /// A REST client for interacting with Postchain blockchain nodes.
 /// 
@@ -37,7 +41,7 @@ pub struct RestClient<'a> {
 }
 
 /// Response types that can be returned from REST API calls.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum RestResponse {
     /// Plain text response
     String(String),
@@ -46,6 +50,8 @@ pub enum RestResponse {
     /// Binary response
     Bytes(Vec<u8>),
 }
+
+pub type RestResponseHeaderMap = BTreeMap<String, String>;
 
 /// HTTP methods supported by the REST client.
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -74,6 +80,16 @@ pub enum TypeError {
     FromReqClient,
     /// Error from the REST API
     FromRestApi,
+    /// Error missing header name in response header
+    MissingHeader,
+    /// Error parse `x-block-height` to i64 in response header
+    ParseBlockHeightError,
+    /// Error parse `x-query-response-signature` to `QueryResponseSignaturedHeader` struct in response header
+    ParseResponseSignatureError,
+    /// Invalid Response Signature
+    InvalidResponseSignature,
+    /// Can Not Verify Response Signature
+    CanNotVerifyResponseSignature
 }
 
 /// Error type for REST operations
@@ -152,13 +168,14 @@ impl<'a> RestClient<'a> {
                 RestRequestMethod::GET,
                 Some(path_segments),
                 Some(&query_params),
+                None,
                 query_body_json,
                 query_body_raw
             )
             .await;
 
         match resp {
-            Ok(RestResponse::Json(json_val)) => {
+            Ok((RestResponse::Json(json_val), _)) => {
                 let list_of_nodes = json_val
                     .as_array()
                     .unwrap()
@@ -167,7 +184,7 @@ impl<'a> RestClient<'a> {
                     .collect();
                 Ok(list_of_nodes)
             }
-            Ok(RestResponse::String(str_val)) => Ok(vec![str_val]),
+            Ok((RestResponse::String(str_val), _)) => Ok(vec![str_val]),
             Ok(_) => Ok(vec!["nop".to_string()]),
             Err(error) => {
                 tracing::error!("Can't get API urls from DC chain: {} because of error: {:?}", brid, error);
@@ -184,10 +201,11 @@ impl<'a> RestClient<'a> {
     /// # Returns
     /// * `Result<String, RestError>` - Blockchain RID on success, or error on failure
     pub async fn get_blockchain_rid(&self, blockchain_iid: u8) -> Result<String, RestError> {
-        let resp: Result<RestResponse, RestError> = self
+        let resp: Result<(RestResponse, RestResponseHeaderMap), RestError> = self
             .postchain_rest_api(
                 RestRequestMethod::GET,
                 Some(&[&format!("/brid/iid_{blockchain_iid}")]),
+                None,
                 None,
                 None,
                 None
@@ -199,7 +217,7 @@ impl<'a> RestClient<'a> {
             return Err(error);
         }
 
-        let resp_val: RestResponse = resp.unwrap();
+        let resp_val: RestResponse = resp.unwrap().0;
 
         match resp_val {
             RestResponse::String(val) => Ok(val.to_string()),
@@ -261,9 +279,10 @@ impl<'a> RestClient<'a> {
 
         let mut merkle_hash_version = 1;
 
-        if let Ok(RestResponse::Json(json_val)) = self.postchain_rest_api(
+        if let Ok((RestResponse::Json(json_val), _)) = self.postchain_rest_api(
             RestRequestMethod::GET,
             Some(&["config", brid, "features"]),
+            None,
             None,
             None,
             None
@@ -364,7 +383,7 @@ impl<'a> RestClient<'a> {
     /// # struct TransactionConfirmationProofData;
     /// # impl RestClient<'_> {
     /// #    async fn postchain_rest_api(&self, _method: RestRequestMethod, _path_segments: Option<&[&str]>,
-    /// #                                 _query_params: Option<&Vec<(&str, &str)>>, _body: Option<&str>, _headers: Option<&[(&str, &str)]>) -> Result<RestResponse, RestError> {
+    /// #                                 _query_params: Option<&Vec<(&str, &str)>>, _body: Option<&str>, _headers: Option<&[(&str, &str)]>) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
     /// #        Ok(RestResponse::Json(Value::String("mock_data".to_string())))
     /// #    }
     /// # }
@@ -429,8 +448,9 @@ impl<'a> RestClient<'a> {
                 query_params,
                 None,
                 None,
+                None,
             )
-            .await?;
+            .await?.0;
 
         match resp {
             RestResponse::Json(json_val) => {
@@ -722,7 +742,8 @@ impl<'a> RestClient<'a> {
             Some(&["tx", blockchain_rid, tx_rid, "status"]),
             None,
             None,
-            None).await?;
+            None,
+            None).await?.0;
         match resp {
             RestResponse::Json(val) => {
                 let status: serde_json::Map<String, Value> = serde_json::from_value(val).unwrap();
@@ -763,8 +784,8 @@ impl<'a> RestClient<'a> {
     /// * `tx` - Transaction to send
     ///
     /// # Returns
-    /// * `Result<RestResponse, RestError>` - Response from the blockchain or error
-    pub async fn send_transaction(&self, tx: &Transaction) -> Result<RestResponse, RestError> {
+    /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - Response from the blockchain or error
+    pub async fn send_transaction(&self, tx: &Transaction) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
         let txe = tx.gvt_hex_encoded();
 
         let resq_body: serde_json::Map<String, Value> =
@@ -780,6 +801,7 @@ impl<'a> RestClient<'a> {
             .postchain_rest_api(
                 RestRequestMethod::POST,
                 Some(&["tx", &blockchain_rid]),
+                None,
                 None,
                 Some(serde_json::json!(resq_body)),
                 None
@@ -797,9 +819,10 @@ impl<'a> RestClient<'a> {
     /// * `query_type` - Type of query to execute
     /// * `query_params` - Optional query parameters
     /// * `query_args` - Optional query arguments
+    /// * `query_headers` - Optional query headers
     ///
     /// # Returns
-    /// * `Result<RestResponse, RestError>` - Query response or error
+    /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - Query response or error
     pub async fn query(
         &self,
         brid: &str,
@@ -807,7 +830,8 @@ impl<'a> RestClient<'a> {
         query_type: &'a str,
         query_params: Option<&'a mut Vec<(&'a str, &'a str)>>,
         query_args: Option<&'a mut Vec<(String, crate::utils::operation::Params)>>,
-    ) -> Result<RestResponse, RestError> {
+        query_headers: Option<&'_ Vec<(&str, &str)>>,
+    ) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
         let query_prefix_str = query_prefix.unwrap_or("query_gtv");
 
         let mut query_args_converted: Option<Vec<(&str, crate::utils::operation::Params)>> = query_args.map(|args| {
@@ -824,9 +848,113 @@ impl<'a> RestClient<'a> {
             RestRequestMethod::POST,
             Some(&[query_prefix_str, brid]),
             query_params.as_deref(),
+            query_headers.as_deref(),
             None,
             Some(encode_str)
         ).await
+    }
+
+    // Make a query with GTV encoded response
+    // POST /query_gtv/{blockchainRid}
+    /// Executes a query on the blockchain, requesting and verifying the response signature and block height.
+    ///
+    /// This function calls the underlying `query` function, automatically requesting a signed response.
+    /// It then verifies the response signature against the response body, query arguments, and block height
+    /// (`QUERY_RESPONSE_BLOCK_HEIGHT_HEADER` and `QUERY_RESPONSE_SIGNATURE_HEADER`).
+    ///
+    /// # Arguments
+    /// * `brid` - **Blockchain RID**.
+    /// * `query_prefix` - Optional path prefix for the query endpoint (e.g., "query_gtv").
+    /// * `query_type` - The **GTV name** of the query to execute.
+    /// * `query_params` - Optional URL query parameters.
+    /// * `query_args` - Optional GTV-encoded query arguments.
+    /// * `query_headers` - Optional additional request headers.
+    ///
+    /// # Errors
+    /// Returns a `RestError` if the query fails, required headers are missing/invalid, or the **signature verification fails**.
+    ///
+    /// # Returns
+    /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - Query response or error.
+    pub async fn query_with_height_and_signature(
+        &self,
+        brid: &str,
+        query_prefix: Option<&str>,
+        query_type: &'a str,
+        query_params: Option<&'a mut Vec<(&'a str, &'a str)>>,
+        query_args: Option<&'a mut Vec<(String, crate::utils::operation::Params)>>,
+        query_headers: Option<&'_ Vec<(&str, &str)>>,
+    ) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
+        let query_args_as_dict: Option<BTreeMap<String, crate::utils::operation::Params>> = query_args
+        .as_ref()
+        .map(|args_vec_ref| {
+            args_vec_ref.iter()
+                .map(|(key, params)| (key.clone(), params.clone()))
+                .collect()
+        });
+
+        let query_header_with_sig = (QUERY_REQUEST_SIGNATURE_HEADER, "true");
+
+        let mut final_headers_vec: Vec<(&str, &str)> = query_headers
+                .map(|headers_vec_ref| {
+                    headers_vec_ref.clone()
+                })
+                .unwrap_or_default();
+
+        final_headers_vec.push(query_header_with_sig);
+        
+        let resp = self.query(brid, query_prefix, query_type, query_params, query_args, Some(&final_headers_vec)).await?;
+        
+        let xblock_height_value: i64 = resp.1.get(QUERY_RESPONSE_BLOCK_HEIGHT_HEADER)
+        .ok_or_else(|| RestError {
+            error_str: Some(format!("Required header '{}' not found in response.", QUERY_RESPONSE_BLOCK_HEIGHT_HEADER)),
+            type_error: TypeError::MissingHeader,
+            ..Default::default()
+        })?
+        .parse::<i64>()
+        .map_err(|err| RestError {
+                error_str: Some(format!("Failed to parse header '{}' as i64: {}", QUERY_RESPONSE_BLOCK_HEIGHT_HEADER, err)),
+                type_error: TypeError::ParseBlockHeightError,
+                ..Default::default()
+            })?;
+
+        let xquery_response_signature_string = resp.1.get(QUERY_RESPONSE_SIGNATURE_HEADER)
+        .ok_or_else(|| RestError {
+            error_str: Some(format!("Required header '{}' not found in response.", QUERY_RESPONSE_SIGNATURE_HEADER)),
+            type_error: TypeError::MissingHeader,
+            ..Default::default()
+        })?;
+
+        let xquery_response_signature_struct= QueryResponseSignaturedHeader::from_str(xquery_response_signature_string)
+            .map_err(|err| RestError {
+                error_str: Some(err),
+                type_error: TypeError::ParseResponseSignatureError,
+                ..Default::default()
+            })?;
+
+        if let RestResponse::Bytes(ref val) = resp.0 {
+            let qrsd = QueryResponseSignatureData {
+                name: query_type.to_string(),
+                args: Params::Dict(query_args_as_dict.unwrap_or(BTreeMap::new())),
+                height: xblock_height_value,
+                response: crate::encoding::gtv::decode(val).unwrap()
+            };
+
+            match verify_query_response_signature(qrsd, xquery_response_signature_struct, 2) {
+                Ok(true) => (),
+                Ok(false) => return Err(RestError {
+                    error_str: Some("Invalid Query Response Signature".to_string()), 
+                    type_error: TypeError::InvalidResponseSignature,
+                    ..Default::default()            
+                }),
+                Err(err) => return Err(RestError {
+                    error_str: Some(err), 
+                    type_error: TypeError::CanNotVerifyResponseSignature,
+                    ..Default::default()            
+                })
+            }
+        }
+
+        Ok(resp)
     }
 
     /// Makes a REST API request to a Postchain node.
@@ -835,23 +963,25 @@ impl<'a> RestClient<'a> {
     /// * `method` - HTTP method to use
     /// * `path_segments` - URL path segments
     /// * `query_params` - Query parameters
+    /// * `query_headers` - Query headers
     /// * `query_body_json` - JSON request body
     /// * `query_body_raw` - Raw request body
     ///
     /// # Returns
-    /// * `Result<RestResponse, RestError>` - API response or error
+    /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - API response or error
     async fn postchain_rest_api(
         &self,
         method: RestRequestMethod,
         path_segments: Option<&[&str]>,
         query_params: Option<&'a Vec<(&'a str, &'a str)>>,
+        query_headers: Option<&'a Vec<(&'a str, &'a str)>>,
         query_body_json: Option<Value>,
         query_body_raw: Option<Vec<u8>>
-    ) -> Result<RestResponse, RestError> {
+    ) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
         let mut node_index: usize = 0;
         loop {
             let result = self.postchain_rest_api_with_poll(method,
-                path_segments, query_params,
+                path_segments, query_params, query_headers,
                 query_body_json.clone(), query_body_raw.clone(), node_index).await;
 
             if let Err(ref error) = result {
@@ -873,21 +1003,23 @@ impl<'a> RestClient<'a> {
     /// * `method` - HTTP method to use
     /// * `path_segments` - URL path segments
     /// * `query_params` - Query parameters
+    /// * `query_headers` - Query headers
     /// * `query_body_json` - JSON request body
     /// * `query_body_raw` - Raw request body
     /// * `node_index` - Index of the node to try
     ///
     /// # Returns
-    /// * `Result<RestResponse, RestError>` - API response or error
+    /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - API response or error
     async fn postchain_rest_api_with_poll(
         &self,
         method: RestRequestMethod,
         path_segments: Option<&[&str]>,
         query_params: Option<&'a Vec<(&'a str, &'a str)>>,
+        query_headers: Option<&'a Vec<(&'a str, &'a str)>>,
         query_body_json: Option<Value>,
         query_body_raw: Option<Vec<u8>>,
         node_index: usize,
-    ) -> Result<RestResponse, RestError> {
+    ) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
 
         let mut url = Url::parse(self.node_url[node_index]).unwrap();
 
@@ -924,12 +1056,23 @@ impl<'a> RestClient<'a> {
             });
         }
 
+        let mut headers = HeaderMap::new();
+
+        if let Some(qh) = query_headers {
+            for (name, value) in qh {
+                let header_name = HeaderName::from_str(name).unwrap();
+                let header_value = HeaderValue::from_str(value).unwrap();
+                headers.insert(header_name, header_value);
+            }
+        }
+
         let rest_client = Client::new();
 
         let req_result = match method {
             RestRequestMethod::GET => {
                 rest_client
                     .get(url.clone())
+                    .headers(headers)
                     .timeout(Duration::from_secs(self.request_time_out))
                     .send()
                     .await
@@ -939,6 +1082,7 @@ impl<'a> RestClient<'a> {
                 if let Some(qb) = query_body_json {
                     rest_client
                         .post(url.clone())
+                        .headers(headers)
                         .timeout(Duration::from_secs(self.request_time_out))
                         .json(&qb)
                         .send()
@@ -947,6 +1091,7 @@ impl<'a> RestClient<'a> {
                     let r_body = reqwest::Body::from(query_body_raw.unwrap());
                     rest_client
                         .post(url.clone())
+                        .headers(headers)
                         .timeout(Duration::from_secs(self.request_time_out))
                         .body(r_body)
                         .send()
@@ -984,6 +1129,13 @@ impl<'a> RestClient<'a> {
 
                 let rest_resp: RestResponse;
 
+                let rest_resp_header_map: RestResponseHeaderMap = resp.headers().iter().filter_map(| (name, value) | {
+                    match value.to_str() {
+                        Ok(v_str) => Some((name.to_string(), v_str.to_string())),
+                        Err(_) => None,
+                    }
+                }).collect();
+
                 if json_resp {
                     let val = resp.json().await.unwrap();
                     rest_resp = RestResponse::Json(val);
@@ -995,7 +1147,7 @@ impl<'a> RestClient<'a> {
                     rest_resp = RestResponse::String(val);
                 }
 
-                Ok(rest_resp)
+                Ok((rest_resp, rest_resp_header_map))
             }
             Err(error) => {
                 let rest_error = RestError {
@@ -1011,18 +1163,4 @@ impl<'a> RestClient<'a> {
 
         req_result_match
     }
-}
-
-#[tokio::test]
-async fn client_detect_merkle_hash_version() {
-    let rc = RestClient{
-        node_url: vec!["https://node11.devnet1.chromia.dev:7740"],
-        ..Default::default()
-    };
-
-    let blockchain_rid = "DCE5D72ED7E1675291AFE7F9D649D898C8D3E7411E52882D03D1B3D240BDD91B";
-
-    let merkle_hash_version = rc.detect_merkle_hash_version(blockchain_rid).await;
-
-    assert_eq!(merkle_hash_version, 2);
 }

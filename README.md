@@ -60,7 +60,8 @@ async fn execute_query_with_params(client: &RestClient<'_>) -> Result<(), Box<dy
         None,
         query_type,
         None,
-        Some(&mut query_arguments)
+        Some(&mut query_arguments),
+        None
     ).await?;
 
     Ok(())
@@ -84,10 +85,11 @@ async fn execute_query_with_struct(client: &RestClient<'_>) -> Result<(), Box<dy
         None,
         query_type,
         None,
-        Some(&mut query_arguments)
+        Some(&mut query_arguments),
+        None
     ).await?;
 
-    if let RestResponse::Bytes(val1) = result {
+    if let (RestResponse::Bytes(val1), _) = result {
         println!("{:?}", gtv::decode(&val1));
     }
 
