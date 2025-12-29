@@ -197,10 +197,10 @@ impl Transaction {
     /// 
     /// # Returns
     /// Hex-encoded string of the GTV-encoded transaction
-    pub fn gvt_hex_encoded(&self) -> String {
-        let gtv_e = gtv::encode_tx(self);
+    pub fn gvt_hex_encoded(&self) -> Result<String, Box<asn1::WriteError>> {
+        let gtv_e = gtv::encode_tx(self)?;
         
-        hex::encode(gtv_e)
+        Ok(hex::encode(gtv_e))
     }
 
     /// Computes the unique identifier (RID) of this transaction.

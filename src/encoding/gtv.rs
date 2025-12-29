@@ -121,16 +121,35 @@ impl GTVParams for Params {
     }
 }
 
-/// Encodes a transaction into a byte vector using GTV format
-/// 
+/// Encodes a complete [`Transaction`] into GTV format for blockchain submission.
+///
+/// This function serializes the transaction following a nested ASN.1 structure:
+/// 1. **Outer Wrapper (Tag 5):** The envelope for the entire transaction.
+/// 2. **Body Wrapper (Tag 5):** Contains the Blockchain RID, operations, and signer public keys.
+/// 3. **Signatures (Tag 5):** An array of cryptographic signatures corresponding to the signers.
+///
 /// # Arguments
-/// 
-/// * `tx` - Reference to the Transaction to be encoded
-/// 
-/// # Returns
-/// 
-/// * `Vec<u8>` - Encoded transaction as a byte vector
-pub fn encode_tx(tx: &Transaction) -> Vec<u8> {
+///
+/// * `tx` - A reference to the [`Transaction`] containing the RID, operations, signers, and signatures.
+///
+/// # Errors
+///
+/// Returns a `Box<asn1::WriteError>` if:
+/// * The internal GTV writer fails to allocate sufficient memory.
+/// * Any operation within the transaction fails to encode (e.g., missing operation names).
+/// * The structural nesting exceeds the ASN.1 writer's limits.
+///
+/// # GTV Structure
+///
+/// ```text
+/// [5] (Transaction)
+///  ├── [5] (Body)
+///  │    ├── OCTET STRING (Blockchain RID)
+///  │    ├── [5] (Operations Array)
+///  │    └── [5] (Signers Array)
+///  └── [5] (Signatures Array)
+/// ```
+pub fn encode_tx(tx: &Transaction) -> Result<Vec<u8>, Box<asn1::WriteError>> {
   asn1::write(|writer| {
     write_explicit_element(writer,
       &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
@@ -187,9 +206,8 @@ pub fn encode_tx(tx: &Transaction) -> Vec<u8> {
 
         Ok(())
       }),
-      5, )?;
-    Ok(())
-  }).unwrap()
+      5, )
+  }).map_err(Box::new)
 }
 
 /// Encodes a query name and its associated arguments into a GTV-encoded byte vector.

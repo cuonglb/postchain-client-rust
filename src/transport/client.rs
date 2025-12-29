@@ -89,7 +89,9 @@ pub enum TypeError {
     /// Invalid Response Signature
     InvalidResponseSignature,
     /// Can Not Verify Response Signature
-    CanNotVerifyResponseSignature
+    CanNotVerifyResponseSignature,
+    /// Failed to encode GTV
+    FailedToEncodeGTV
 }
 
 /// Error type for REST operations
@@ -786,7 +788,13 @@ impl<'a> RestClient<'a> {
     /// # Returns
     /// * `Result<(RestResponse, RestResponseHeaderMap), RestError>` - Response from the blockchain or error
     pub async fn send_transaction(&self, tx: &Transaction) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
-        let txe = tx.gvt_hex_encoded();
+        let txe = tx.gvt_hex_encoded().map_err(|err| {
+            RestError {
+                error_str: Some(format!("Failed to encode GTV: {:?}", err.to_string())),
+                type_error: TypeError::FailedToEncodeGTV,
+                ..Default::default()
+            }
+        })?;
 
         let resq_body: serde_json::Map<String, Value> =
             vec![("tx".to_string(), serde_json::json!(txe))]
@@ -843,7 +851,7 @@ impl<'a> RestClient<'a> {
         let encode_str = crate::encoding::gtv::encode(query_type, query_args_converted.as_deref()).map_err(|err| {
             RestError {
                 error_str: Some(format!("Failed to encode GTV: {:?}", err.to_string())),
-                type_error: TypeError::ParseBlockHeightError,
+                type_error: TypeError::FailedToEncodeGTV,
                 ..Default::default()
             }
         })?;      
