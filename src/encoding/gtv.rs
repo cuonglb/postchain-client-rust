@@ -238,27 +238,26 @@ pub fn encode(
 /// 
 /// * `asn1::WriteResult` - Result of the write operation
 fn encode_tx_body(writer: &mut asn1::Writer, operation: &Operation) -> asn1::WriteResult {
-  write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
-    // Operation name
-    write_explicit_element(writer,&asn1::Utf8String::new(operation.operation_name.as_ref().unwrap()), 2)?;
-    // Operation args
-    write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
-      if let Some(operation_args) = &operation.list {
-        for arg in operation_args {
-          arg.to_writer(writer)?;
-        }
-      } else if let Some(operation_args) = &operation.dict {
-        write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
-          for (_key, val) in operation_args {
-            val.to_writer(writer)?;
-          }
-          Ok(())
-        }), 5)?;
-      }
-      Ok(())
-    }), 5)?;
-    Ok(())
-  }), 5)
+    write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+        let name = operation.operation_name.as_deref().ok_or(asn1::WriteError::AllocationError)?;
+        write_explicit_element(writer, &asn1::Utf8String::new(name), 2)?;
+
+        write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+            if let Some(operation_args) = &operation.list {
+                for arg in operation_args {
+                    arg.to_writer(writer)?;
+                }
+            } else if let Some(operation_args) = &operation.dict {
+                return write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+                    for (_key, val) in operation_args {
+                        val.to_writer(writer)?;
+                    }
+                    Ok(())
+                }), 5);
+            }
+            Ok(())
+        }), 5)
+    }), 5)
 }
 
 /// Encodes the body of a query
