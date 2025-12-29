@@ -490,23 +490,27 @@ pub fn to_draw_gtx(tx: &Transaction) -> Params {
     }
   }
 
-  for op in &tx.operations.clone().unwrap() {
-    let mut op_args: Vec<Params> = vec![];
+  if let Some(tx_ops) = &tx.operations {
+    for op in tx_ops {
+      let mut op_args: Vec<Params> = vec![];
 
-    if let Some(op_list) = &op.list {
-      for arg in op_list {
-        op_args.push(arg.clone());
+      if let Some(op_list) = &op.list {
+        for arg in op_list {
+          op_args.push(arg.clone());
+        }
+      } else if let Some(op_dict) = &op.dict {
+        for (_key, value) in op_dict {
+          op_args.push(value.clone());
+        }
       }
-    } else if let Some(op_dict) = &op.dict {
-      for (_key, value) in op_dict {
-        op_args.push(value.clone());
-      }
+
+      let op_name = op.operation_name.as_deref().unwrap_or("_unknown_operation");
+
+      operations.push(Params::Array(vec![
+        Params::Text(op_name.to_string()),
+        Params::Array(op_args)
+      ]));
     }
-
-    operations.push(Params::Array(vec![
-      Params::Text(op.operation_name.clone().unwrap()),
-      Params::Array(op_args)
-    ]));
   }
 
   Params::Array(vec![
