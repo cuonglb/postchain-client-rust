@@ -834,13 +834,19 @@ impl<'a> RestClient<'a> {
     ) -> Result<(RestResponse, RestResponseHeaderMap), RestError> {
         let query_prefix_str = query_prefix.unwrap_or("query_gtv");
 
-        let mut query_args_converted: Option<Vec<(&str, crate::utils::operation::Params)>> = query_args.map(|args| {
+        let query_args_converted: Option<Vec<(&str, crate::utils::operation::Params)>> = query_args.map(|args| {
             args.iter()
                 .map(|(key, params)| (key.as_ref(), params.clone()))
                 .collect()
         });
 
-        let encode_str = crate::encoding::gtv::encode(query_type, query_args_converted.as_mut());      
+        let encode_str = crate::encoding::gtv::encode(query_type, query_args_converted.as_deref()).map_err(|err| {
+            RestError {
+                error_str: Some(format!("Failed to encode GTV: {:?}", err.to_string())),
+                type_error: TypeError::ParseBlockHeightError,
+                ..Default::default()
+            }
+        })?;      
         
         tracing::info!("Querying {} to {}", query_type, brid); 
 

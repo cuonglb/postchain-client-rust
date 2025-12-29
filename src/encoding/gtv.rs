@@ -192,32 +192,39 @@ pub fn encode_tx(tx: &Transaction) -> Vec<u8> {
   }).unwrap()
 }
 
-/// Encodes a query and its arguments into GTV format
-/// 
+/// Encodes a query name and its associated arguments into a GTV-encoded byte vector.
+///
+/// This function wraps the query and its arguments in a GTV Sequence (Tag 5). 
+/// The body is encoded as a GTV Dictionary (Tag 4) containing the key-value pairs.
+///
 /// # Arguments
-/// 
-/// * `query_type` - The type of query to encode
-/// * `query_args` - Optional vector of query arguments as (name, value) pairs
-/// 
-/// # Returns
-/// 
-/// * `Vec<u8>` - Encoded query as a byte vector
+///
+/// * `query_type` - A string slice representing the name of the operation or query.
+/// * `query_args` - An optional slice of tuples, where each tuple contains a 
+///   parameter name (`&str`) and its value ([`Params`]).
+///
+/// # Errors
+///
+/// Returns a `Box<asn1::WriteError>` if the ASN.1 writer fails to allocate space 
+/// or if the data structure exceeds encoding limits.
+///
+/// # Example
+///
+/// ```
+/// let args = [("user_id", Params::Integer(123))];
+/// let encoded = encode("get_user_info", Some(&args))?;
+/// ```
 pub fn encode(
     query_type: &str,
-    query_args: Option<&mut Vec<(&str, Params)>>,
-) -> Vec<u8> {
+    query_args: Option<&[(&str, Params)]>,
+) -> Result<Vec<u8>, Box<asn1::WriteError>> {
     asn1::write(|writer| {
         write_explicit_element(writer,
             &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
                 writer.write_element(&Choice::UTF8STRING(asn1::Utf8String::new(query_type)))?;
-                encode_body(writer, &query_args)?;
-                Ok(())
-            }),
-            5,
-        )?;
-        Ok(())
-    })
-    .unwrap()
+                encode_body(writer, query_args)
+            }),5)
+    }).map_err(Box::new)
 }
 
 /// Encodes the body of a transaction operation
@@ -265,11 +272,11 @@ fn encode_tx_body(writer: &mut asn1::Writer, operation: &Operation) -> asn1::Wri
 /// 
 /// * `asn1::WriteResult` - Result of the write operation
 fn encode_body(writer: &mut asn1::Writer,
-  query_args: &Option<&mut Vec<(&str, Params)>>)
+  query_args: Option<&[(&str, Params)]>)
   -> asn1::WriteResult {
   write_explicit_element(writer,
       &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
-          if let Some(q_args) = &query_args {
+          if let Some(q_args) = query_args {
               for (q_type, q_args) in q_args.iter() {
                   writer.write_element(&asn1::SequenceWriter::new(
                       &|writer: &mut asn1::Writer| {
@@ -286,15 +293,38 @@ fn encode_body(writer: &mut asn1::Writer,
   )
 }
 
-/// Decodes a byte slice into a GTV value
-/// 
+/// Decodes a GTV-encoded byte slice into a [`Params`] value.
+///
+/// This function acts as the entry point for GTV decoding. It dispatches the 
+/// top-level ASN.1 tag to the appropriate decoder and recursively parses 
+/// nested structures like Arrays (Tag 5) and Dictionaries (Tag 4).
+///
 /// # Arguments
-/// 
-/// * `data` - Byte slice containing the encoded GTV data
-/// 
-/// # Returns
-/// 
-/// * `Result<Params, ParseError>` - The decoded value or an error if decoding fails
+///
+/// * `data` - A byte slice containing the raw ASN.1 GTV data.
+///
+/// # Errors
+///
+/// Returns a `Box<asn1::ParseError>` if:
+/// * The data is truncated or contains invalid ASN.1 tags.
+/// * A nested structure (Array/Dict) is malformed.
+/// * An integer value exceeds the supported bounds.
+///
+/// # Security
+///
+/// This parser is designed to be panic-free. It uses recursive descent to 
+/// validate the structure of the input. However, callers should be aware 
+/// that deeply nested GTV structures may consume significant stack space.
+///
+/// # Example
+///
+/// ```
+/// let encoded_data: &[u8] = &[...];
+/// match decode(encoded_data) {
+///     Ok(params) => println!("Decoded: {:?}", params),
+///     Err(e) => eprintln!("Failed to parse GTV: {}", e),
+/// }
+/// ```
 pub fn decode(data: &[u8]) -> Result<Params, Box<ParseError>> {
     asn1::parse(data, |d| {
         let choice = Choice::parse(d)?;
@@ -302,6 +332,28 @@ pub fn decode(data: &[u8]) -> Result<Params, Box<ParseError>> {
     }).map_err(Box::new)
 }
 
+/// Recursively maps an ASN.1 [`Choice`] variant to a GTV [`Params`] value.
+///
+/// This is the core transformation logic for GTV decoding. It handles the conversion
+/// of primitive types (Integers, Strings, Nulls) and implements recursive descent 
+/// for complex nested types (Arrays and Dictionaries).
+///
+/// # Type Mapping
+///
+/// | ASN.1 Choice Variant | GTV Params Variant | Notes |
+/// | :--- | :--- | :--- |
+/// | `NULL` | `Null` | Represents an empty value. |
+/// | `OCTETSTRING` | `ByteArray` | Decoded as a `Vec<u8>`. |
+/// | `UTF8STRING` | `Text` | Decoded as an owned `String`. |
+/// | `INTEGER` | `Integer` | Supports 64-bit signed integers. |
+/// | `BIGINTEGER` | `BigInteger` | Uses two's complement via `num_bigint`. |
+/// | `ARRAY` | `Array` | Recursively parses nested elements (Tag 5). |
+/// | `DICT` | `Dict` | Parses a sequence of key-value pairs (Tag 4). |
+///
+/// # Errors
+///
+/// Returns a [`ParseError`] if any nested element in an Array or Dictionary 
+/// fails to parse according to the GTV specification.
 fn decode_choice(choice: Choice) -> Result<Params, ParseError> {
     match choice {
         Choice::NULL(_) => Ok(Params::Null),
@@ -438,10 +490,10 @@ pub fn to_draw_gtx(tx: &Transaction) -> Params {
 /// * `query_args` - Optional query arguments to test
 /// * `expected_value` - Expected hexadecimal string after encoding
 fn assert_roundtrips(
-  query_args: Option<&mut Vec<(&str, Params)>>,
+  query_args: Option<&[(&str, Params)]>,
   expected_value: &str) {
     let result = asn1::write(|writer| {
-      encode_body(writer, &query_args)?;
+      encode_body(writer, query_args)?;
       Ok(())
     });
     assert_eq!(hex::encode(result.unwrap()), expected_value);
