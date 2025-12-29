@@ -26,7 +26,7 @@
 use crate::utils::{operation::{Operation, Params}, transaction::Transaction};
 
 use asn1::{Asn1Read, Asn1Readable, Asn1Write, ParseError};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, cell::RefCell};
 
 #[derive(Asn1Read, Asn1Write, Debug, Clone)]
 pub enum Choice<'a> {
@@ -286,109 +286,6 @@ fn encode_body(writer: &mut asn1::Writer,
   )
 }
 
-/// Decodes a simple GTV value from a Choice enum
-/// 
-/// # Arguments
-/// 
-/// * `choice` - The Choice enum variant to decode
-/// 
-/// # Returns
-/// 
-/// * `Params` - The decoded parameter value
-fn decode_simple(choice: Choice) -> Params {
-  match choice {
-      Choice::INTEGER(val) =>
-        Params::Integer(val),
-      Choice::BIGINTEGER(val) => {
-        let result = if val.is_negative() {
-          num_bigint::BigInt::from_signed_bytes_be(val.as_bytes())
-        } else {
-          num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, val.as_bytes())
-        };
-        Params::BigInteger(result)
-      },
-      Choice::OCTETSTRING(val) =>
-        Params::ByteArray(val.to_vec()),
-      Choice::UTF8STRING(val) =>
-        Params::Text(val.as_str().to_string()),
-      _ => 
-        Params::Null
-  }
-}
-
-/// Decodes a sequence of values into an array
-/// 
-/// # Arguments
-/// 
-/// * `parser` - The ASN.1 parser to read from
-/// * `vec_array` - Vector to store the decoded values
-fn decode_sequence_array<'a>(parser: &mut asn1::Parser<'a>, vec_array: &mut Vec<Params>) {
-  while let Ok(val) = Choice::parse(parser) {
-    let op_val = match val {
-        Choice::ARRAY(seq) => {
-          let res: Result<Params, ParseError> = seq.parse(|parser| {
-            let mut vect_array_new: Vec<Params> = Vec::new();
-            decode_sequence_array(parser, &mut vect_array_new);
-            Ok(Params::Array(vect_array_new))
-          });
-          res.unwrap()
-        }
-        Choice::DICT(seq) => {
-          let res: Result<Params, ParseError> = seq.parse(|parser| {
-            let mut btree_map_new: BTreeMap<String, Params> = BTreeMap::new();
-            decode_sequence_dict(parser, &mut btree_map_new);
-            Ok(Params::Dict(btree_map_new))
-          });
-          res.unwrap()
-        }
-        _ =>
-          decode_simple(val)
-    };
-    vec_array.push(op_val);
-  }
-}
-
-/// Decodes a sequence of key-value pairs into a dictionary
-/// 
-/// # Arguments
-/// 
-/// * `parser` - The ASN.1 parser to read from
-/// * `btreemap` - BTreeMap to store the decoded key-value pairs
-fn decode_sequence_dict<'a>(parser: &mut asn1::Parser<'a>, btreemap: &mut BTreeMap<String, Params>) {
-  while let Ok(seq) = parser.read_element::<asn1::Sequence>() {
-      let res: Result<(&'a str, Params), ParseError> = seq.parse(|parser| {
-        let key = parser.read_element::<asn1::Utf8String>()?;
-        let val = Choice::parse(parser).unwrap();
-
-        let op_val = match val {
-          Choice::DICT(seq) => {
-            let res: Result<Params, ParseError> = seq.parse(|parser| {
-              let mut btree_map_new: BTreeMap<String, Params> = BTreeMap::new();
-              decode_sequence_dict(parser, &mut btree_map_new);
-              Ok(Params::Dict(btree_map_new))
-            });
-            res.unwrap()
-          }
-          Choice::ARRAY(seq) => {
-            let res: Result<Params, ParseError> = seq.parse(|parser| {
-              let mut vect_array_new: Vec<Params> = Vec::new();
-              decode_sequence_array(parser, &mut vect_array_new);
-              Ok(Params::Array(vect_array_new))
-            });
-            res.unwrap()
-          },
-          _ => 
-            decode_simple(val)      
-        };
-
-        Ok((key.as_str(), op_val))
-      });
-
-      let (key, value) = res.unwrap();
-      btreemap.insert(key.to_string(), value);
-  }
-}
-
 /// Decodes a byte slice into a GTV value
 /// 
 /// # Arguments
@@ -399,34 +296,47 @@ fn decode_sequence_dict<'a>(parser: &mut asn1::Parser<'a>, btreemap: &mut BTreeM
 /// 
 /// * `Result<Params, ParseError>` - The decoded value or an error if decoding fails
 pub fn decode(data: &[u8]) -> Result<Params, Box<ParseError>> {
-  let tag = asn1::Tag::from_bytes(data).unwrap();
-  let tag_num = tag.0.as_u8().unwrap() & 0x1f;
-
-  if [0, 1, 2, 3, 6].contains(&tag_num) {
     asn1::parse(data, |d| {
-        let res_choice = Choice::parse(d);
-        match res_choice {
-            Ok(val) => Ok(decode_simple(val)),
-            Err(error) => Err(Box::new(error)),
+        let choice = Choice::parse(d)?;
+        decode_choice(choice)
+    }).map_err(Box::new)
+}
+
+fn decode_choice(choice: Choice) -> Result<Params, ParseError> {
+    match choice {
+        Choice::NULL(_) => Ok(Params::Null),
+        Choice::OCTETSTRING(v) => Ok(Params::ByteArray(v.to_vec())),
+        Choice::UTF8STRING(v) => Ok(Params::Text(v.as_str().to_string())),
+        Choice::INTEGER(v) => Ok(Params::Integer(v)),
+        Choice::BIGINTEGER(v) => {
+            Ok(Params::BigInteger(num_bigint::BigInt::from_signed_bytes_be(v.as_bytes())))
         }
-    })
-  } else if tag_num == 4 {
-    let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 4>>(data).unwrap();
-    result.into_inner().parse(|parser| {
-      let mut btree_map_new: BTreeMap<String, Params> = BTreeMap::new();
-      decode_sequence_dict(parser, &mut btree_map_new);
-      Ok(Params::Dict(btree_map_new))
-    })
-  } else if tag_num == 5 {
-    let result = asn1::parse_single::<asn1::Explicit<asn1::Sequence, 5>>(data).unwrap();
-    result.into_inner().parse(|parser|{
-      let mut vect_array_new: Vec<Params> = Vec::new();
-      decode_sequence_array(parser, &mut vect_array_new);
-      Ok(Params::Array(vect_array_new))
-    })
-  } else {
-    Ok(Params::Null)
-  }
+        Choice::ARRAY(seq) => {
+            let items = RefCell::new(Vec::new());
+            seq.parse::<(), ParseError, _>(|parser| {
+                while let Ok(next_choice) = Choice::parse(parser) {
+                    items.borrow_mut().push(decode_choice(next_choice)?);
+                }
+                Ok(())
+            })?;
+            Ok(Params::Array(items.into_inner()))
+        }
+        Choice::DICT(seq) => {
+            let map = RefCell::new(BTreeMap::new());
+            seq.parse::<(), ParseError, _>(|parser| {
+                while let Ok(pair_seq) = parser.read_element::<asn1::Sequence>() {
+                    pair_seq.parse::<(), ParseError, _>(|inner| {
+                        let key = inner.read_element::<asn1::Utf8String>()?.as_str().to_string();
+                        let val_choice = Choice::parse(inner)?;
+                        map.borrow_mut().insert(key, decode_choice(val_choice)?);
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })?;
+            Ok(Params::Dict(map.into_inner()))
+        }
+    }
 }
 
 /// Decodes a transaction from a byte slice
