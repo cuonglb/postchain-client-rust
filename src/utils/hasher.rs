@@ -579,7 +579,7 @@ pub fn verify_signature(pubkey_bytes: [u8;33], signature_bytes: [u8;64], hashed_
     let signature = Signature::from_compact(&signature_bytes)?;
     let message = Message::from_slice(&hashed_data_bytes)?;
 
-    let secp = Secp256k1::new();
+    let secp = Secp256k1::verification_only();
 
     match secp.verify_ecdsa(message, &signature, &public_key) {
         Ok(_) => Ok(true),
