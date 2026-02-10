@@ -212,20 +212,23 @@ impl BinaryTreeFactory {
             return Ok(leaves.into_iter().next().unwrap());
         }
 
-        let results = leaves.chunks(2)
-            .map(|chunk| {
-                if chunk.len() == 2 {
-                    let left = chunk[0].clone();
-                    let right = chunk[1].clone();
-                    BinaryTreeNode::new_node(Some(left), Some(right), None, NodeType::Node)
-                } else {
-                    *chunk[0].clone()
-                }
-            })
-            .map(Box::new)
-            .collect::<Vec<_>>();
+        let mut next_layer = Vec::with_capacity((leaves.len() + 1) / 2);
+        let mut iter = leaves.into_iter();
 
-        Self::process_layer(results)
+        while let Some(left) = iter.next() {
+            if let Some(right) = iter.next() {
+                next_layer.push(Box::new(BinaryTreeNode::new_node(
+                    Some(left),
+                    Some(right),
+                    None,
+                    NodeType::Node
+                )));
+            } else {
+                next_layer.push(left);
+            }
+        }
+
+        Self::process_layer(next_layer)
     }
 
     /// Processes an array parameter into a Merkle tree node.
@@ -246,7 +249,7 @@ impl BinaryTreeFactory {
     /// # Note
     /// The resulting tree preserves the order of array elements in the leaf nodes
     fn process_array_node(params: Box<Params>, hash_version: u8) -> Result<Box<BinaryTreeNode>, HashError> {
-        if let Params::Array(array_value) = &*params {
+        if let Params::Array(array_value) = *params {
             if array_value.is_empty() {
                 let left = BinaryTreeNode::new_leaf(None, true);
                 let right = BinaryTreeNode::new_leaf(None, true);
@@ -310,7 +313,7 @@ impl BinaryTreeFactory {
     /// # Note
     /// Dictionary entries are processed in sorted order by key to ensure consistent hashing
     fn process_dict_node(params: Box<Params>, hash_version: u8) -> Result<Box<BinaryTreeNode>, HashError> {
-        if let Params::Dict(dict_value) = &*params {
+        if let Params::Dict(dict_value) = *params {
             if dict_value.is_empty() {
                 let left = BinaryTreeNode::new_leaf(None, true);
                 let right = BinaryTreeNode::new_leaf(None, true);
