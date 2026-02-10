@@ -7,7 +7,7 @@ use postchain_client::{
 };
 
 use std::{collections::BTreeMap, str::FromStr};
-use rand::Rng;
+use rand::RngExt;
 use ctor::ctor;
 
 #[ctor]
