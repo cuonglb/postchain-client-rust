@@ -61,7 +61,7 @@ pub trait GTVParams: Clone {
     fn to_writer(&self, writer: &mut asn1::Writer) -> asn1::WriteResult;
 }
 
-pub fn write_explicit_element<T: asn1::Asn1Writable>(writer: &mut asn1::Writer, val: &T, tag: u32)
+pub fn write_explicit_element<T: asn1::Asn1Writable<Error = asn1::WriteError>>(writer: &mut asn1::Writer, val: &T, tag: u32)
   -> asn1::WriteResult {
   let tag = asn1::explicit_tag(tag);
   let content_length: Option<usize> = val.encoded_length();
@@ -73,7 +73,7 @@ impl GTVParams for Params {
         match self {
             Params::Array(val) => {
                 write_explicit_element(writer,
-                    &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+                    &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
                         for v in val {
                             v.to_writer(writer)?;
                         }
@@ -84,9 +84,9 @@ impl GTVParams for Params {
             }
             Params::Dict(val) => {
                 write_explicit_element(writer,
-                    &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+                    &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
                         for v in val {
-                            writer.write_element(&asn1::SequenceWriter::new(
+                            writer.write_element(&asn1::SequenceWriter::<asn1::WriteError>::new(
                                 &|writer: &mut asn1::Writer| {
                                     writer.write_element(&asn1::Utf8String::new(v.0))?;
                                     v.1.to_writer(writer)?;
@@ -150,12 +150,12 @@ impl GTVParams for Params {
 ///  └── [5] (Signatures Array)
 /// ```
 pub fn encode_tx(tx: &Transaction) -> Result<Vec<u8>, Box<asn1::WriteError>> {
-  asn1::write(|writer| {
+  asn1::write::<asn1::WriteError, _>(|writer| {
     write_explicit_element(writer,
-      &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+      &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
           
           write_explicit_element(writer,
-            &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+            &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
 
               // Blockchain RID
               writer.write_element(&Choice::OCTETSTRING(
@@ -163,7 +163,7 @@ pub fn encode_tx(tx: &Transaction) -> Result<Vec<u8>, Box<asn1::WriteError>> {
 
               // Operations and args
               write_explicit_element(writer,
-                &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+                &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
  
                   if let Some(operations) = &tx.operations {
                     for operation in operations {
@@ -177,7 +177,7 @@ pub fn encode_tx(tx: &Transaction) -> Result<Vec<u8>, Box<asn1::WriteError>> {
 
               // Signers pubkeys
               write_explicit_element(writer,
-                &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+                &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
                 
                   if let Some(signers) = &tx.signers {
                     for sig in signers {
@@ -193,7 +193,7 @@ pub fn encode_tx(tx: &Transaction) -> Result<Vec<u8>, Box<asn1::WriteError>> {
 
           // Signatures
           write_explicit_element(writer,
-            &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+            &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
              
               if let Some(signatures) = &tx.signatures {
                 for sig in signatures {
@@ -236,9 +236,9 @@ pub fn encode(
     query_type: &str,
     query_args: Option<&[(&str, Params)]>,
 ) -> Result<Vec<u8>, Box<asn1::WriteError>> {
-    asn1::write(|writer| {
+    asn1::write::<asn1::WriteError, _>(|writer| {
         write_explicit_element(writer,
-            &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+            &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
                 writer.write_element(&Choice::UTF8STRING(asn1::Utf8String::new(query_type)))?;
                 encode_body(writer, query_args)
             }),5)
@@ -256,17 +256,17 @@ pub fn encode(
 /// 
 /// * `asn1::WriteResult` - Result of the write operation
 fn encode_tx_body(writer: &mut asn1::Writer, operation: &Operation) -> asn1::WriteResult {
-    write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+    write_explicit_element(writer, &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer| {
         let name = operation.operation_name.as_deref().ok_or(asn1::WriteError::AllocationError)?;
         write_explicit_element(writer, &asn1::Utf8String::new(name), 2)?;
 
-        write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+        write_explicit_element(writer, &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer| {
             if let Some(operation_args) = &operation.list {
                 for arg in operation_args {
                     arg.to_writer(writer)?;
                 }
             } else if let Some(operation_args) = &operation.dict {
-                return write_explicit_element(writer, &asn1::SequenceWriter::new(&|writer| {
+                return write_explicit_element(writer, &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer| {
                     for (_key, val) in operation_args {
                         val.to_writer(writer)?;
                     }
@@ -292,10 +292,10 @@ fn encode_body(writer: &mut asn1::Writer,
   query_args: Option<&[(&str, Params)]>)
   -> asn1::WriteResult {
   write_explicit_element(writer,
-      &asn1::SequenceWriter::new(&|writer: &mut asn1::Writer| {
+      &asn1::SequenceWriter::<asn1::WriteError>::new(&|writer: &mut asn1::Writer| {
           if let Some(q_args) = query_args {
               for (q_type, q_args) in q_args.iter() {
-                  writer.write_element(&asn1::SequenceWriter::new(
+                  writer.write_element(&asn1::SequenceWriter::<asn1::WriteError>::new(
                       &|writer: &mut asn1::Writer| {
                           writer.write_element(&asn1::Utf8String::new(q_type))?;
                           q_args.to_writer(writer)?;
@@ -431,7 +431,7 @@ pub fn decode_tx(data: &[u8]) -> Result<Params, Box<ParseError>> {
 /// 
 /// * `Vec<u8>` - The encoded value as a byte vector
 pub fn encode_value(value: &Params) -> Vec<u8> {
-  asn1::write(|writer| {
+  asn1::write::<asn1::WriteError, _>(|writer| {
       value.to_writer(writer)?;
       Ok(())
   }).unwrap()
@@ -509,7 +509,7 @@ pub fn to_draw_gtx(tx: &Transaction) -> Params {
 fn assert_roundtrips(
   query_args: Option<&[(&str, Params)]>,
   expected_value: &str) {
-    let result = asn1::write(|writer| {
+    let result = asn1::write::<asn1::WriteError, _>(|writer| {
       encode_body(writer, query_args)?;
       Ok(())
     });
@@ -778,7 +778,7 @@ fn gtv_test_sequence_with_nested_dict_array() {
 /// * `op` - Value to encode
 /// * `expected_value` - Expected hexadecimal string after encoding
 fn assert_roundtrips_simple(op: Params, expected_value: &str) {
-  let result = asn1::write(|writer| {
+  let result = asn1::write::<asn1::WriteError, _>(|writer| {
       op.to_writer(writer)?;
       Ok(())
     });
@@ -915,8 +915,8 @@ fn gtv_test_sequence_simple_array_decode() {
     ]),
   ]);
 
-  let result = asn1::write(|writer| {
-      data.to_writer(writer)?; Ok(()) }).unwrap();
+  let result = asn1::write::<asn1::WriteError, _>(|writer| {
+    data.to_writer(writer)?; Ok(()) }).unwrap();
   
   assert_eq!(data, decode(result.as_slice()).unwrap());
 }
@@ -930,7 +930,7 @@ fn gtv_test_sequence_simple_dict_decode() {
 
   let data = Params::Dict(data_btreemap);
 
-  let result = asn1::write(|writer| {
+  let result = asn1::write::<asn1::WriteError, _>(|writer| {
     data.to_writer(writer)?; Ok(()) }).unwrap();
 
   assert_eq!(data, decode(result.as_slice()).unwrap());  
@@ -958,7 +958,7 @@ fn gtv_test_sequence_complex_mix_dict_array_decode() {
   
   let data = Params::Dict(data_btreemap);
 
-  let result = asn1::write(|writer| {
+  let result = asn1::write::<asn1::WriteError, _>(|writer| {
     data.to_writer(writer)?; Ok(()) }).unwrap();
 
   assert_eq!(data, decode(result.as_slice()).unwrap());
