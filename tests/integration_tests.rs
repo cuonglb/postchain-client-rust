@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, str::FromStr};
 use rand::RngExt;
 use ctor::ctor;
 
-#[ctor]
+#[ctor(unsafe)]
 fn initialize_test_envs() {
     tracing_subscriber::fmt::init();
 }
