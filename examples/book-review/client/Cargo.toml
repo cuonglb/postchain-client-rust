@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 postchain-client = { path = "../../../" }
-openssl = "0.10.79"
+openssl = "0.10.80"
 ring = "0.17.13"
 tokio = { version = "1.45", features = ["rt"] }
 hex = "0.4.3"
