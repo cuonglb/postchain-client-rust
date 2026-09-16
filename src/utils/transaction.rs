@@ -50,7 +50,7 @@ use crate::encoding::gtv;
 use crate::utils::hasher::gtv_hash;
 use crate::encoding::gtv::decode as gtv_decode;
 use super::{hasher, operation::Operation, operation::Params as Op_Params};
-use secp256k1::{PublicKey, Secp256k1, SecretKey, Message, ecdsa::Signature};
+use secp256k1::{ecdsa, Message, PublicKey, SecretKey};
 use hex::FromHex;
 
 /// Represents the current status of a transaction in the blockchain.
@@ -535,10 +535,9 @@ impl Transaction {
 /// # Errors
 /// Returns an error if the private key is invalid or signing fails
 fn sign(digest: &[u8; 32], private_key: &[u8; 32]) -> Result<[u8; 64], secp256k1::Error> {
-    let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_byte_array(*private_key)?;
+    let secret_key = SecretKey::from_secret_bytes(*private_key)?;
     let message = Message::from_digest(*digest);
-    let signature: Signature = secp.sign_ecdsa(message, &secret_key);
+    let signature: ecdsa::Signature = ecdsa::sign(message, &secret_key);
     let serialized_signature = signature.serialize_compact();
     Ok(serialized_signature)
 }
@@ -554,9 +553,8 @@ fn sign(digest: &[u8; 32], private_key: &[u8; 32]) -> Result<[u8; 64], secp256k1
 /// # Errors
 /// Returns an error if the private key is invalid
 fn get_public_key(private_key: &[u8; 32]) -> Result<[u8; 33], secp256k1::Error> {
-    let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_byte_array(*private_key)?;
-    let public_key = PublicKey::from_secret_key(&secp, &secret_key).serialize();
+    let secret_key = SecretKey::from_secret_bytes(*private_key)?;
+    let public_key = PublicKey::from_secret_key(&secret_key).serialize();
     Ok(public_key)
 }
 

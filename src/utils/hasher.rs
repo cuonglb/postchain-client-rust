@@ -56,7 +56,7 @@
 use sha2::{Sha256, Digest};
 use crate::utils::operation::Params;
 use crate::encoding::gtv::encode_value as gtv_encode_value;
-use secp256k1::{ecdsa::Signature, PublicKey, Secp256k1, Message};
+use secp256k1::{ecdsa::Signature, Message, PublicKey};
 
 /// Represents different types of nodes in the Merkle tree structure.
 /// 
@@ -580,11 +580,9 @@ pub fn gtv_hash(value: Params, hash_version: u8) -> Result<[u8; 32], HashError> 
 pub fn verify_signature(pubkey_bytes: [u8;33], signature_bytes: [u8;64], hashed_data_bytes: [u8; 32]) -> Result<bool, secp256k1::Error> {
     let public_key = PublicKey::from_slice(&pubkey_bytes)?;
     let signature = Signature::from_compact(&signature_bytes)?;
-    let message = Message::from_slice(&hashed_data_bytes)?;
+    let message = Message::from_digest(hashed_data_bytes);
 
-    let secp = Secp256k1::verification_only();
-
-    match secp.verify_ecdsa(message, &signature, &public_key) {
+    match secp256k1::ecdsa::verify(&signature, message, &public_key) {
         Ok(_) => Ok(true),
         Err(secp256k1::Error::IncorrectSignature) => Ok(false),
         Err(err) => Err(err),
